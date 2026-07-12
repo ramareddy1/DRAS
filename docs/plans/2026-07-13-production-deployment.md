@@ -469,7 +469,7 @@ git commit -m "feat: production compose stack — Caddy edge with auto-HTTPS + b
 **Files:**
 - Modify: `.github/workflows/ci.yml`
 
-- [ ] **Step 1: Add the job**
+- [x] **Step 1: Add the job**
 
 Append to `.github/workflows/ci.yml`:
 ```yaml
@@ -483,7 +483,7 @@ Append to `.github/workflows/ci.yml`:
         run: docker build -t reconops-edge -f deploy/Dockerfile.edge .
 ```
 
-- [ ] **Step 2: Commit, push, verify all three CI jobs green**
+- [x] **Step 2: Commit, push, verify all three CI jobs green**
 
 ```bash
 git add .github/workflows/ci.yml

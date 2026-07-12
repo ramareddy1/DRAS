@@ -38,3 +38,12 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
       - run: npm run build
+
+  prod-images:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Backend image
+        run: docker build -t reconops-backend ./backend
+      - name: Edge image (frontend build + Caddy)
+        run: docker build -t reconops-edge -f deploy/Dockerfile.edge .
