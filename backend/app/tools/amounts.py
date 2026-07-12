@@ -1,12 +1,11 @@
-"""Amount coercion, classification, and fee-pattern detection.
+"""Amount coercion, currency detection, and deterministic classification.
 
-In v3 each branch of `classify_amount_diff` returns a structured
+Each branch of `classify_amount_diff` returns a structured
 (status, confidence, evidence[], alternatives[]) tuple that the agent
 turns into a Rationale object.
 
-`FEE_PATTERNS` is a list of (rule_id, label, predicate) triples. Phase 4
-migrates these into the per-account rules.json — same shape, different
-storage.
+Fee-pattern knowledge lives in the per-account rules store (seeded at
+account creation) — not here — so revoking a fee rule changes verdicts.
 """
 from __future__ import annotations
 
@@ -48,17 +47,6 @@ def detect_currency_tokens(s: pd.Series, sample_n: int = 50) -> set:
     return out
 
 
-# (rule_id, human_label, predicate(a, b) -> bool)
-FEE_PATTERNS: List[Tuple[str, str, callable]] = [
-    ("stripe_fee_2.9_0.30", "Stripe (2.9% + $0.30)",
-     lambda a, b: abs((a - b) - (a * 0.029 + 0.30)) < max(0.02, a * 0.001)),
-    ("paypal_fee_2.99",     "PayPal (2.99%)",
-     lambda a, b: abs((a - b) - (a * 0.0299)) < max(0.02, a * 0.001)),
-    ("paypal_fee_3.49_0.49", "PayPal (3.49% + $0.49)",
-     lambda a, b: abs((a - b) - (a * 0.0349 + 0.49)) < max(0.02, a * 0.001)),
-]
-
-
 def classify_amount_diff(
     diff_abs: float, diff_pct: float, a_amt: float, b_amt: float,
     tol_abs: float, tol_pct: float,
@@ -67,6 +55,12 @@ def classify_amount_diff(
 
     Returns (status, confidence, evidence, alternatives). All four are the
     shape the agent will wrap into a Rationale.
+
+    Fee-shape detection deliberately does NOT live here: the per-account
+    `fee_pattern` rules (seeded at account creation, dispatched by
+    rules_store.apply_rules_to_matched *before* this classifier runs) are
+    the single source of fee knowledge — so revoking a fee rule actually
+    changes verdicts.
     """
     # Within tolerance
     if abs(diff_abs) <= tol_abs or abs(diff_pct) <= tol_pct:
@@ -77,30 +71,6 @@ def classify_amount_diff(
                           f"or |diff_pct|={abs(diff_pct)*100:.2f}% (<= {tol_pct*100:.2f}%)"),
             ),
         ], [])
-
-    # Fee patterns (A > B, processor took a cut)
-    if a_amt > b_amt and a_amt > 0:
-        for rule_id, label, fn in FEE_PATTERNS:
-            try:
-                if fn(a_amt, b_amt):
-                    return ("fee_offset", 0.95, [
-                        Evidence(
-                            source=rule_id,
-                            evidence=(f"diff_abs=${diff_abs:.2f} matches {label} "
-                                      f"on amount=${a_amt:.2f} -> expected fee "
-                                      f"~${(a_amt - b_amt):.2f}"),
-                        ),
-                    ], [
-                        Alt(
-                            status=("major" if (abs(diff_pct) >= 0.03 or abs(diff_abs) >= 100) else "minor"),
-                            confidence=0.05,
-                            reason=("raw diff would otherwise classify as "
-                                    f"{'major' if (abs(diff_pct) >= 0.03 or abs(diff_abs) >= 100) else 'minor'} "
-                                    "but fee pattern dominates"),
-                        ),
-                    ])
-            except Exception:
-                pass
 
     # Major / minor thresholds
     is_major = abs(diff_pct) >= 0.03 or abs(diff_abs) >= 100

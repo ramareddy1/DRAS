@@ -17,11 +17,14 @@ def test_within_tolerance_is_match():
     assert status == "match"
 
 
-def test_stripe_fee_shape_detected():
+def test_fee_shapes_are_not_classified_here():
+    # Fee detection lives in the per-account rules store (dispatched before
+    # this classifier); the raw classifier reports the honest diff verdict.
+    # See tests/test_fee_consolidation.py for the end-to-end fee behavior.
     a = 100.00
-    b = round(a - (a * 0.029 + 0.30), 2)  # 96.80
+    b = round(a - (a * 0.029 + 0.30), 2)  # 96.80, Stripe shape, 3.2%
     status, conf, ev, alts = classify_amount_diff(a - b, (a - b) / a, a, b, 0.01, 0.005)
-    assert status == "fee_offset"
+    assert status == "major"  # 3.2% >= 3% threshold
 
 
 def test_major_threshold():

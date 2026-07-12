@@ -1222,7 +1222,7 @@ Fee knowledge is duplicated: seeded rules in `rules_store` AND hardcoded `FEE_PA
 - Test: `backend/tests/test_fee_consolidation.py`
 - Re-pin: `samples/samples_*_expected.json` if summaries change
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `backend/tests/test_fee_consolidation.py`:
 ```python
@@ -1271,23 +1271,23 @@ def test_revoked_fee_rule_changes_the_verdict(env):
     assert out.matched[0]["status"] != "fee_offset"  # fails while FEE_PATTERNS exists
 ```
 
-- [ ] **Step 2: Run to verify the second test fails**
+- [x] **Step 2: Run to verify the second test fails**
 
 Run: `python -m pytest tests/test_fee_consolidation.py -v`
 Expected: first passes, second FAILS (classifier re-derives the fee from `FEE_PATTERNS`).
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 In `amounts.py`: delete the `FEE_PATTERNS` list and the entire `# Fee patterns` branch inside `classify_amount_diff` (the `if a_amt > b_amt and a_amt > 0:` block). The seeded `fee_pattern` rules in `rules_store.apply_rules_to_matched` (which runs *before* classification in `agent.run_job`) are now the only fee detector.
 
 Check `grep -rn "FEE_PATTERNS" backend/` afterward — the only remaining references should be comments; delete those too.
 
-- [ ] **Step 4: Re-pin eval + verify**
+- [x] **Step 4: Re-pin eval + verify**
 
 Run: `python -m pytest -q` → both fee tests pass.
 Run: `python -m app.eval` — fee counts should be identical (rules fire first for every seeded account); if `fee_offset` counts differ in the snapshot diff, investigate before re-pinning — a difference means some path reached classification without account rules loaded.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/app/tools/amounts.py backend/tests/test_fee_consolidation.py samples/
