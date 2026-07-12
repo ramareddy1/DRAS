@@ -1400,7 +1400,7 @@ git commit -m "feat: per-account materiality thresholds for major/minor classifi
 - Modify: `backend/app/ontology/concepts.yaml`
 - Test: `backend/tests/test_binding_aliases.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `backend/tests/test_binding_aliases.py`:
 ```python
@@ -1437,9 +1437,9 @@ def test_stripe_export_headers_bind():
     assert _top_concept(df, "Fee") == "payment.fee"
 ```
 
-- [ ] **Step 2: Run to verify what fails** → `python -m pytest tests/test_binding_aliases.py -v`. Some assertions may already pass via substring/value-shape signals; keep only genuinely failing ones in mind for step 3 but leave all assertions in the test.
+- [x] **Step 2: Run to verify what fails** → `python -m pytest tests/test_binding_aliases.py -v`. Some assertions may already pass via substring/value-shape signals; keep only genuinely failing ones in mind for step 3 but leave all assertions in the test.
 
-- [ ] **Step 3: Add aliases to `concepts.yaml`**
+- [x] **Step 3: Add aliases to `concepts.yaml`**
 
 - `payment.amount` aliases += `payment_value`, `converted_amount`
 - `payment.method` aliases += `payment_type`
@@ -1448,7 +1448,7 @@ def test_stripe_export_headers_bind():
 - `date.event` aliases += `order_purchase_timestamp`, `created (utc)`, `created_utc`, `available_on`, `available on (utc)`
 - `sku.id` aliases += `product_id`
 
-- [ ] **Step 4: Verify + commit**
+- [x] **Step 4: Verify + commit**
 
 Run: `python -m pytest -q && python -m app.eval` → all pass; if the eval snapshot changes (a sample column now binds differently), inspect and re-pin only if the new binding is correct.
 

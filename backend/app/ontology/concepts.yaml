@@ -36,7 +36,7 @@ concepts:
     type: money
     role: primary_amount
     entity: orders
-    aliases: [order_total, total, grand_total, order_amount, order amount, subtotal, line_total]
+    aliases: [order_total, total, grand_total, order_amount, order amount, subtotal, line_total, price]
     value_hints:
       numeric_range: [0, 100000]
     invariants:
@@ -81,7 +81,8 @@ concepts:
     type: money
     role: primary_amount
     entity: payments
-    aliases: [amount, gross, captured, payment_amount, charge_amount]
+    aliases: [amount, gross, captured, payment_amount, charge_amount,
+              payment_value, converted_amount, amount_captured]
     value_hints:
       numeric_range: [0, 100000]
 
@@ -89,7 +90,7 @@ concepts:
     type: money
     role: fee
     entity: payments
-    aliases: [fee, processing_fee, stripe_fee, paypal_fee]
+    aliases: [fee, processing_fee, stripe_fee, paypal_fee, fee_amount]
 
   - id: payment.net
     type: money
@@ -101,14 +102,14 @@ concepts:
     type: string
     role: attribute
     entity: payments
-    aliases: [method, source, brand, payment_method, card_brand]
+    aliases: [method, source, brand, payment_method, card_brand, payment_type]
 
   # ---------------- inventory / SKUs ----------------
   - id: sku.id
     type: string
     role: primary_key
     entity: inventory
-    aliases: [sku, variant_sku, item_code, item_sku, product_sku, code]
+    aliases: [sku, variant_sku, item_code, item_sku, product_sku, code, product_id]
     value_hints:
       regex: '^[A-Za-z0-9\-_]{2,}$'
 
@@ -170,7 +171,8 @@ concepts:
     role: event_time
     entity: shared
     aliases: [date, created_at, order_date, payment_date, settlement_date,
-              invoice_date, transaction_date, timestamp, ship_date, posted_date]
+              invoice_date, transaction_date, timestamp, ship_date, posted_date,
+              order_purchase_timestamp, created_utc, available_on]
     value_hints:
       datetime: true
 
