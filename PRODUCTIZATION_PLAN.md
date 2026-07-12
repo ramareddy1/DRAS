@@ -1353,7 +1353,7 @@ git commit -m "fix: triage signatures anchor to the resolved key binding, not a 
 - Add endpoint: `PATCH /api/accounts/me/profile` in `main.py` (calls `accounts_memory.update_profile`)
 - Test: extend `backend/tests/test_amounts.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to `backend/tests/test_amounts.py`:
 ```python
@@ -1367,9 +1367,9 @@ def test_materiality_thresholds_are_parameters():
     assert status_default == "minor"
 ```
 
-- [ ] **Step 2: Run to verify it fails** → `python -m pytest tests/test_amounts.py -v` → FAIL: unexpected kwargs.
+- [x] **Step 2: Run to verify it fails** → `python -m pytest tests/test_amounts.py -v` → FAIL: unexpected kwargs.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `classify_amount_diff(diff_abs, diff_pct, a_amt, b_amt, tol_abs, tol_pct, major_abs=100.0, major_pct=0.03)`; replace both `0.03`/`100` literal pairs (major branch and the fee-alternative text) with the params. Thread through `propose_classification(..., major_abs, major_pct)` and from `agent.run_job`: `account.profile.materiality_abs`, `account.profile.materiality_pct`.
 
@@ -1383,7 +1383,7 @@ def patch_profile(payload: dict, account: Account = Depends(require_account)):
     return accounts_memory.update_profile(account.id, allowed)
 ```
 
-- [ ] **Step 4: Verify + commit**
+- [x] **Step 4: Verify + commit**
 
 Run: `python -m pytest -q && python -m app.eval` → pass (defaults unchanged).
 

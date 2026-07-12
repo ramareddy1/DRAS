@@ -43,6 +43,8 @@ def propose_classification(
     account_id: str,
     job_id: Optional[str],
     allow_llm: bool = True,
+    major_abs: float = 100.0,
+    major_pct: float = 0.03,
 ) -> Rationale:
     """Return a deterministic Rationale for one matched row.
 
@@ -74,6 +76,7 @@ def propose_classification(
 
     status, confidence, evidence, alts = classify_amount_diff(
         diff_abs, diff_pct, a_amt, b_amt, tol_abs, tol_pct,
+        major_abs=major_abs, major_pct=major_pct,
     )
 
     if row_ctx.get("match_type") == "fuzzy":

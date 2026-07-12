@@ -293,6 +293,8 @@ def run_job(
                 tol_abs=tol_abs, tol_pct=tol_pct,
                 account_id=account.id, job_id=job_id,
                 allow_llm=False,
+                major_abs=account.profile.materiality_abs,
+                major_pct=account.profile.materiality_pct,
             )
 
         # Phase 5: user-taught force_status rules win over the initial verdict.

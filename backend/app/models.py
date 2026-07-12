@@ -10,6 +10,9 @@ class AccountProfile(BaseModel):
     time_zone: Optional[str] = None
     amount_tolerance_abs: float = 0.01
     amount_tolerance_pct: float = 0.005
+    # Materiality: what counts as a "major" discrepancy for THIS brand.
+    materiality_abs: float = 100.0
+    materiality_pct: float = 0.03
     # Phase 4 will add: custom_fee_rates, known_source_labels, etc.
 
 

@@ -30,3 +30,14 @@ def test_fee_shapes_are_not_classified_here():
 def test_major_threshold():
     status, conf, ev, alts = classify_amount_diff(150.0, 0.15, 1000.0, 850.0, 0.01, 0.005)
     assert status == "major"
+
+
+def test_materiality_thresholds_are_parameters():
+    # $60 diff at 0.6%: major for a small brand (threshold $50), minor for
+    # the default ($100 / 3%) — materiality must be per-account, not global.
+    status_small, *_ = classify_amount_diff(60.0, 0.006, 10000.0, 9940.0,
+                                            0.01, 0.005, major_abs=50.0, major_pct=0.03)
+    status_default, *_ = classify_amount_diff(60.0, 0.006, 10000.0, 9940.0,
+                                              0.01, 0.005)
+    assert status_small == "major"
+    assert status_default == "minor"

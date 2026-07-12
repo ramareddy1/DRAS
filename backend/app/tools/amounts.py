@@ -50,6 +50,7 @@ def detect_currency_tokens(s: pd.Series, sample_n: int = 50) -> set:
 def classify_amount_diff(
     diff_abs: float, diff_pct: float, a_amt: float, b_amt: float,
     tol_abs: float, tol_pct: float,
+    major_abs: float = 100.0, major_pct: float = 0.03,
 ) -> Tuple[str, float, List[Evidence], List[Alt]]:
     """Deterministic amount classification.
 
@@ -72,14 +73,14 @@ def classify_amount_diff(
             ),
         ], [])
 
-    # Major / minor thresholds
-    is_major = abs(diff_pct) >= 0.03 or abs(diff_abs) >= 100
+    # Major / minor thresholds (per-account materiality)
+    is_major = abs(diff_pct) >= major_pct or abs(diff_abs) >= major_abs
     if is_major:
         return ("major", 0.90, [
             Evidence(
                 source="threshold_major",
-                evidence=(f"|diff_abs|=${abs(diff_abs):.2f} >= $100 or "
-                          f"|diff_pct|={abs(diff_pct)*100:.2f}% >= 3%"),
+                evidence=(f"|diff_abs|=${abs(diff_abs):.2f} >= ${major_abs:.2f} or "
+                          f"|diff_pct|={abs(diff_pct)*100:.2f}% >= {major_pct*100:.2f}%"),
             ),
         ], [
             Alt(status="minor", confidence=0.10,

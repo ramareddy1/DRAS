@@ -126,6 +126,18 @@ def get_my_account(account: Account = Depends(require_account)):
     return account
 
 
+@app.patch("/api/accounts/me/profile", response_model=Account)
+def patch_profile(payload: dict, account: Account = Depends(require_account)):
+    """Update per-account settings (tolerances, materiality thresholds)."""
+    allowed = {k: (payload or {}).get(k) for k in
+               ("time_zone", "amount_tolerance_abs", "amount_tolerance_pct",
+                "materiality_abs", "materiality_pct")}
+    try:
+        return accounts_memory.update_profile(account.id, allowed)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid profile update: {e}")
+
+
 @app.post("/api/preview")
 async def preview_file(
     file: UploadFile = File(...),
