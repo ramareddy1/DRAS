@@ -42,7 +42,7 @@ from .tools.binding import pick_key_pair, resolve_amount_date
 from .tools.classify import (
     ESCALATION_THRESHOLD, batch_second_opinions, propose_classification,
 )
-from .tools.matching import match_by_key
+from .tools.matching import aggregate_duplicate_keys, match_by_key
 from .tools.timing import coerce_date, timing_stats
 
 
@@ -206,6 +206,13 @@ def run_job(
     a["_date"] = coerce_date(a[date_a_col]) if date_a_col else pd.NaT
     b["_date"] = coerce_date(b[date_b_col]) if date_b_col else pd.NaT
 
+    # --- Step 2b: collapse duplicate keys (many-to-one) ------------------------
+    # Real exports are many-to-one: several payments/vouchers settle one
+    # order. Rows sharing a normalized key are summed into one row per side
+    # before matching; `_agg_count` flows onto the matched record.
+    a, agg_a = aggregate_duplicate_keys(a, key_a.column_name)
+    b, agg_b = aggregate_duplicate_keys(b, key_b.column_name)
+
     # --- Step 3: match ---------------------------------------------------------
     mres = match_by_key(a, b, key_a.column_name, key_b.column_name)
 
@@ -301,6 +308,8 @@ def run_job(
             "date_a": row_a["_date"].isoformat() if pd.notna(row_a["_date"]) else None,
             "date_b": row_b["_date"].isoformat() if pd.notna(row_b["_date"]) else None,
             "delta_days": row_ctx["delta_days"],
+            "agg_count_a": int(row_a.get("_agg_count", 1) or 1),
+            "agg_count_b": int(row_b.get("_agg_count", 1) or 1),
         }
         record_rationales.append((record, rationale))
         matched_rows.append(record)
@@ -317,7 +326,7 @@ def run_job(
         record["rationale"] = rationale.model_dump()
 
     # --- Step 5: unmatched rows -----------------------------------------------
-    drop_internal = ["_amt", "_date"]
+    drop_internal = ["_amt", "_date", "_agg_count"]
 
     def _row_dict(row: pd.Series) -> Dict[str, Any]:
         rec = row.drop(labels=drop_internal, errors="ignore").to_dict()
@@ -366,6 +375,8 @@ def run_job(
         total_discrepancy_value=round(total_disc_value, 2),
         total_amount_a=round(total_amt_a, 2),
         total_amount_b=round(total_amt_b, 2),
+        aggregated_a=(agg_a.rows_collapsed if agg_a else 0),
+        aggregated_b=(agg_b.rows_collapsed if agg_b else 0),
     )
 
     # --- Step 8: insights -----------------------------------------------------

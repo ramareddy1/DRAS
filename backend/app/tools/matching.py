@@ -44,6 +44,44 @@ class MatchResult:
     fuzzy_count: int
 
 
+@dataclass
+class AggregationInfo:
+    groups: int          # normalized keys that had >1 row
+    rows_collapsed: int  # extra rows folded into their group's first row
+
+
+def aggregate_duplicate_keys(df: pd.DataFrame, key_col: str):
+    """Collapse rows sharing a normalized key into one row per key.
+
+    Real exports are many-to-one — an order paid by several charges or
+    vouchers, split shipments against one PO. `_amt` is summed across the
+    group (min_count=1, so all-missing stays missing); every other field
+    keeps the first row's value; `_agg_count` records the group size.
+
+    Returns (df, AggregationInfo) — or (df, None) untouched when every key
+    is already unique. Singleton rows keep their original `_amt`, including
+    NaN, so the amounts_missing path still fires for them.
+    """
+    norm = df[key_col].astype(str).str.strip().map(norm_key)
+    sizes = norm.map(norm.value_counts())
+    if (sizes <= 1).all():
+        return df, None
+
+    work = df.copy()
+    work["_norm_key"] = norm
+    work["_agg_count"] = sizes.astype(int).values
+    group_sums = work.groupby("_norm_key")["_amt"].sum(min_count=1)
+    first_mask = ~work["_norm_key"].duplicated(keep="first")
+    dup_first = first_mask & (work["_agg_count"] > 1)
+    work.loc[dup_first, "_amt"] = work.loc[dup_first, "_norm_key"].map(group_sums)
+
+    out = work[first_mask].drop(columns=["_norm_key"])
+    return out, AggregationInfo(
+        groups=int((work.loc[first_mask, "_agg_count"] > 1).sum()),
+        rows_collapsed=int((~first_mask).sum()),
+    )
+
+
 def match_by_key(
     df_a: pd.DataFrame, df_b: pd.DataFrame,
     key_a_col: str, key_b_col: str,

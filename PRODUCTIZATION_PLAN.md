@@ -942,7 +942,7 @@ Note: uploading this pair through the UI **will look broken until Task 10 lands*
 - Modify: `backend/app/models.py` (Summary gains `aggregated_a: int = 0`, `aggregated_b: int = 0`)
 - Test: `backend/tests/test_aggregation.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `backend/tests/test_aggregation.py`:
 ```python
@@ -971,11 +971,11 @@ def test_no_duplicates_is_passthrough():
     assert len(out) == 2
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `python -m pytest tests/test_aggregation.py -v` → FAIL: function doesn't exist.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 In `matching.py`:
 ```python
@@ -1014,13 +1014,13 @@ In `agent.py`, immediately after the `_amt`/`_date` coercion (Step 2):
 ```
 Add to the `Summary(...)` construction: `aggregated_a=(agg_a.rows_collapsed if agg_a else 0), aggregated_b=(agg_b.rows_collapsed if agg_b else 0)`. Add `_agg_count` to the `drop_internal` list so unmatched-row dicts stay clean, but copy it onto matched `record` dicts (`"agg_count": int(row_b.get("_agg_count", 1))`) so the UI can show "3 payments summed".
 
-- [ ] **Step 4: Verify on Olist + re-pin eval**
+- [x] **Step 4: Verify on Olist + re-pin eval**
 
 Run: `python -m pytest -q` → pass.
 Run: `python -m app.eval` — the bundled samples have no duplicate keys, so snapshots should be unchanged; if they differ, stop and investigate before re-pinning.
 Manual: upload `samples/olist/olist_order_totals.csv` + `olist_payments_raw.csv`; multi-payment orders must now match, and remaining discrepancies should be genuine (vouchers, canceled orders).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/app/tools/matching.py backend/app/agent.py backend/app/models.py backend/tests/test_aggregation.py

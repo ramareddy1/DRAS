@@ -117,6 +117,9 @@ class Summary(BaseModel):
     total_discrepancy_value: float
     total_amount_a: float
     total_amount_b: float
+    # Many-to-one support: rows folded into their key group before matching
+    aggregated_a: int = 0
+    aggregated_b: int = 0
 
 
 # -----------------------------------------------------------------------------
