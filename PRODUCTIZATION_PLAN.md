@@ -1117,7 +1117,7 @@ A learned `force_status` rule keyed on a coarse signature can silently reclassif
 - Modify: `frontend/src/pages/RulesPage.jsx` (show preview before Accept)
 - Test: `backend/tests/test_rule_guardrails.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `backend/tests/test_rule_guardrails.py`:
 ```python
@@ -1151,11 +1151,11 @@ def test_legacy_rule_without_ceiling_still_fires():
     assert r is not None
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `python -m pytest tests/test_rule_guardrails.py -v` → FAIL: unexpected `diff_abs` kwarg.
 
-- [ ] **Step 3: Implement the ceiling**
+- [x] **Step 3: Implement the ceiling**
 
 `apply_force_status_rules(rules, signature, key, diff_abs=None)` — after the prefix match, add:
 ```python
@@ -1169,7 +1169,7 @@ Set the ceiling at rule creation:
 - `main.py` `resolve_triage` add_rule branch: `when={"signature_prefix": item.signature, "max_abs_diff": round(max(3 * abs(item.diff_abs or 0.0), 50.0), 2)}`
 - `rule_proposer.propose_from_decisions`: same formula using the largest `|diff_abs|` seen — the decision log entries don't carry diff_abs today, so use the triage item when resolvable (`triage_store.find_by_signature`) and fall back to `50.0`.
 
-- [ ] **Step 4: Scope preview endpoint**
+- [x] **Step 4: Scope preview endpoint**
 
 In `main.py`:
 ```python
@@ -1201,7 +1201,7 @@ def preview_rule(rule_id: str, account: Account = Depends(require_account)):
 ```
 `RulesPage.jsx`: on pending rules, fetch the preview and render "Would have affected **N rows / $X** in your last 10 jobs (ceiling $C)" next to the Accept button.
 
-- [ ] **Step 5: Verify + commit**
+- [x] **Step 5: Verify + commit**
 
 Run: `python -m pytest -q && python -m app.eval` → pass.
 

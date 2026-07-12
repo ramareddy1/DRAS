@@ -395,7 +395,10 @@ def resolve_triage(item_id: str, payload: dict, account: Account = Depends(requi
             account_id=account.id, kind="force_status",
             description=((payload or {}).get("description")
                          or f"Always treat {item.signature[:8]}… as '{forced_status}'"),
-            when={"signature_prefix": item.signature},
+            # Ceiling: 3× the diff the rule was taught on, floor $50 — a rule
+            # learned on fee noise must never swallow a big discrepancy.
+            when={"signature_prefix": item.signature,
+                  "max_abs_diff": round(max(3 * abs(item.diff_abs or 0.0), 50.0), 2)},
             then={"status": forced_status},
             origin="user_rule", user_origin_text=user_reason,
             confidence=0.9, state="active",
@@ -430,6 +433,35 @@ def list_rules(account: Account = Depends(require_account)):
         return [r.model_dump(mode="json") for r in rules if r.state in states]
 
     return {"active": grp(("active",)), "pending": grp(("pending",)), "revoked": grp(("revoked",))}
+
+
+@app.get("/api/rules/{rule_id}/preview")
+def preview_rule(rule_id: str, account: Account = Depends(require_account)):
+    """What would this rule have done across recent jobs? Shown before Accept
+    so the user sees the blast radius of a force_status rule."""
+    from .models import Rationale
+    rules = rules_store.load_rules(account.id)
+    rule = next((r for r in rules if r.id == rule_id), None)
+    if rule is None or rule.kind != "force_status":
+        raise HTTPException(status_code=404, detail="force_status rule not found")
+    prefix = rule.when.get("signature_prefix") or ""
+    affected, total = [], 0.0
+    if prefix:
+        for meta in storage.list_jobs(account.id, limit=10):
+            job = storage.load_job(meta["job_id"]) or {}
+            for row in job.get("matched", []):
+                rat = row.get("rationale") or {}
+                try:
+                    sig = triage_store.signature_for_matched(Rationale.model_validate(rat), row)
+                except Exception:
+                    continue
+                if sig.startswith(prefix):
+                    affected.append({"job_id": meta["job_id"], "key": row.get("key"),
+                                     "status": rat.get("status"), "diff_abs": row.get("diff_abs")})
+                    total += abs(row.get("diff_abs") or 0.0)
+    return _clean({"rule_id": rule_id, "affected_count": len(affected),
+                   "total_abs_diff": round(total, 2), "rows": affected[:50],
+                   "max_abs_diff_ceiling": rule.when.get("max_abs_diff")})
 
 
 @app.post("/api/rules/{rule_id}/accept")

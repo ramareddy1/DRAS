@@ -76,6 +76,9 @@ export async function getRules() {
 export async function acceptRule(ruleId) {
   return post(`/api/rules/${ruleId}/accept`);
 }
+export async function previewRule(ruleId) {
+  return handle(await accountFetch(`${BASE}/api/rules/${ruleId}/preview`));
+}
 export async function revokeRule(ruleId) {
   return post(`/api/rules/${ruleId}/revoke`);
 }

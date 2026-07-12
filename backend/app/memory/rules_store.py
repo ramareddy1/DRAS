@@ -222,6 +222,7 @@ def apply_rules_to_matched(
 
 def apply_force_status_rules(
     rules: List[Rule], signature: str, key: str,
+    diff_abs: Optional[float] = None,
 ) -> Optional[Rationale]:
     """Post-classification override.
 
@@ -231,6 +232,12 @@ def apply_force_status_rules(
     signature is only knowable *after* an initial classification, the agent
     runs this pass once it has computed the row's signature. An active match
     here wins over the initial verdict.
+
+    Guardrail: rules carry a `max_abs_diff` ceiling set at creation (3× the
+    diff they were taught on, floor $50). A row whose |diff| exceeds the
+    ceiling is NOT suppressed — the real verdict stands, so a rule taught on
+    fee noise can never swallow a large discrepancy. Legacy rules without a
+    ceiling keep firing unconditionally.
     """
     for r in rules:
         if r.state != "active" or r.kind != "force_status":
@@ -238,6 +245,9 @@ def apply_force_status_rules(
         sig_prefix = r.when.get("signature_prefix") or r.when.get("signature")
         if not sig_prefix or not signature.startswith(sig_prefix):
             continue
+        ceiling = r.when.get("max_abs_diff")
+        if ceiling is not None and diff_abs is not None and abs(diff_abs) > float(ceiling):
+            continue  # too big for this rule — let the real verdict stand
         ev = [Evidence(
             source=f"rule:{r.id[:8]}",
             evidence=f"forced by rule '{r.description}'",

@@ -1,5 +1,23 @@
 import { useEffect, useState } from "react";
-import { getRules, acceptRule, revokeRule } from "../api/client.js";
+import { getRules, acceptRule, revokeRule, previewRule } from "../api/client.js";
+
+/** Blast-radius preview for a pending force_status rule. */
+function RulePreview({ ruleId }) {
+  const [p, setP] = useState(null);
+  useEffect(() => {
+    previewRule(ruleId).then(setP).catch(() => setP(null));
+  }, [ruleId]);
+  if (!p) return null;
+  return (
+    <div className="mt-2 text-xs text-slate-600 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">
+      Would have affected <span className="font-semibold">{p.affected_count} row{p.affected_count === 1 ? "" : "s"}</span>
+      {" "}totaling <span className="font-semibold">${Number(p.total_abs_diff).toLocaleString()}</span> across your last 10 jobs
+      {p.max_abs_diff_ceiling != null && (
+        <> · never applies when |diff| exceeds <span className="font-semibold">${Number(p.max_abs_diff_ceiling).toLocaleString()}</span></>
+      )}
+    </div>
+  );
+}
 
 function RuleCard({ rule, children }) {
   return (
@@ -51,12 +69,15 @@ export default function RulesPage() {
           <h2 className="text-sm font-semibold text-amber-700 mb-2">Proposed ({pending.length})</h2>
           <div className="space-y-2">
             {pending.map((r) => (
-              <RuleCard key={r.id} rule={r}>
-                <button disabled={busy === r.id} onClick={() => doAccept(r.id)}
-                  className="text-xs px-3 py-1.5 rounded bg-good text-white hover:opacity-90 disabled:opacity-50">Accept</button>
-                <button disabled={busy === r.id} onClick={() => doRevoke(r.id)}
-                  className="text-xs px-3 py-1.5 rounded bg-slate-200 text-slate-700 hover:bg-slate-300 disabled:opacity-50">Reject</button>
-              </RuleCard>
+              <div key={r.id}>
+                <RuleCard rule={r}>
+                  <button disabled={busy === r.id} onClick={() => doAccept(r.id)}
+                    className="text-xs px-3 py-1.5 rounded bg-good text-white hover:opacity-90 disabled:opacity-50">Accept</button>
+                  <button disabled={busy === r.id} onClick={() => doRevoke(r.id)}
+                    className="text-xs px-3 py-1.5 rounded bg-slate-200 text-slate-700 hover:bg-slate-300 disabled:opacity-50">Reject</button>
+                </RuleCard>
+                {r.kind === "force_status" && <RulePreview ruleId={r.id} />}
+              </div>
             ))}
           </div>
         </section>

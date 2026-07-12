@@ -291,7 +291,9 @@ def run_job(
         # Phase 5: user-taught force_status rules win over the initial verdict.
         # They're keyed on the row's signature, which is only knowable now.
         _sig = triage_store.signature_for_matched(rationale, row_ctx)
-        _forced = rules_store.apply_force_status_rules(account_rules, _sig, m.key_a)
+        _forced = rules_store.apply_force_status_rules(
+            account_rules, _sig, m.key_a, diff_abs=row_ctx.get("diff_abs"),
+        )
         if _forced is not None and _forced.status != rationale.status:
             rationale = _forced
             rule_applications += 1

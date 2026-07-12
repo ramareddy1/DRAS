@@ -51,12 +51,17 @@ def propose_from_decisions(account_id: str) -> List[Rule]:
 
     existing = _existing_signatures(account_id)
     created: List[Rule] = []
+    # Ceiling source: the triage item this signature was seen on (any state).
+    from . import triage as triage_store
+    items_by_sig = {i.signature: i for i in triage_store.load_all(account_id)}
 
     for (sig, user_status), n in counts.items():
         if n < MIN_OCCURRENCES:
             continue
         if sig in existing:
             continue
+        item = items_by_sig.get(sig)
+        taught_diff = abs((item.diff_abs if item else None) or 0.0)
         rule = Rule(
             account_id=account_id,
             kind="force_status",
@@ -64,7 +69,8 @@ def propose_from_decisions(account_id: str) -> List[Rule]:
                 f"User marked {n} rows with signature {sig[:8]}… as "
                 f"'{user_status}'."
             ),
-            when={"signature_prefix": sig},
+            when={"signature_prefix": sig,
+                  "max_abs_diff": round(max(3 * taught_diff, 50.0), 2)},
             then={"status": user_status if user_status in
                   ("match", "minor", "major", "fee_offset") else "match"},
             origin=f"user_confirmed_{n}x",
