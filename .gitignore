@@ -7,4 +7,5 @@ __pycache__/
 backend/data/
 data/
 samples/Kaggle/
+samples/olist/
 .DS_Store

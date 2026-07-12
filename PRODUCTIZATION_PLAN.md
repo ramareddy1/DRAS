@@ -869,7 +869,7 @@ Olist's true reconciliation pair: **sum(order_items.price + freight_value) per o
 - Create: `samples/build_olist_pair.py`
 - Modify: `.gitignore` (add `samples/olist/` — derived from CC BY-NC-SA data, must not be committed to a public repo)
 
-- [ ] **Step 1: Write the derivation script**
+- [x] **Step 1: Write the derivation script**
 
 `samples/build_olist_pair.py`:
 ```python
@@ -916,12 +916,12 @@ print(f"orders: {len(sampled)} rows -> {OUT/'olist_order_totals.csv'}")
 print(f"payments: {(pay['order_id'].isin(sampled['order_id'])).sum()} rows")
 ```
 
-- [ ] **Step 2: Run it and inspect**
+- [x] **Step 2: Run it and inspect**
 
 Run: `python samples/build_olist_pair.py`
 Expected: two CSVs under `samples/olist/`, each well under 10MB. Spot-check one order with `payment_sequential > 1` — its payments should sum to (approximately) the order total.
 
-- [ ] **Step 3: Gitignore the output + commit the script**
+- [x] **Step 3: Gitignore the output + commit the script**
 
 Add `samples/olist/` to `.gitignore`.
 
