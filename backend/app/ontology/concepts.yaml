@@ -1,0 +1,201 @@
+# ReconOps AI — seeded concept graph (v1).
+#
+# Each concept has:
+#   id          — dotted concept identifier (entity.attribute)
+#   type        — value type the concept holds
+#   role        — what this concept does in a reconciliation:
+#                   primary_key      — the field rows are matched on
+#                   primary_amount   — the field whose values are compared
+#                   settled_amount   — the amount AFTER fees / deductions
+#                   fee              — a deduction from a primary amount
+#                   event_time       — when the event happened
+#                   component        — a piece of a primary amount (tax, shipping)
+#                   attribute        — descriptive, not used for matching
+#   entity      — which entity this concept belongs to (orders, payments, ...)
+#   aliases     — known column-name spellings that map to this concept
+#   value_hints — optional, see ontology/__init__.py: shape clues for inference
+#                   regex            — value must match this pattern
+#                   numeric_range    — [min, max] for plausible values
+#                   datetime         — true if value should parse as a date
+#   invariants  — natural-language declarations linking this concept to others
+
+version: 1
+
+concepts:
+
+  # ---------------- orders ----------------
+  - id: order.id
+    type: string
+    role: primary_key
+    entity: orders
+    aliases: [order_id, order#, name, order_number, orderid, order, order no, order_no, order ref, ref, reference]
+    value_hints:
+      regex: '^#?[A-Za-z0-9\-_]{3,}$'
+
+  - id: order.gross_total
+    type: money
+    role: primary_amount
+    entity: orders
+    aliases: [order_total, total, grand_total, order_amount, order amount, subtotal, line_total]
+    value_hints:
+      numeric_range: [0, 100000]
+    invariants:
+      - "order.gross_total ≈ payment.amount + payment.fee (per matched key)"
+
+  - id: order.net_total
+    type: money
+    role: settled_amount
+    entity: orders
+    aliases: [net, payout, settled_amount, net_total]
+
+  - id: order.tax
+    type: money
+    role: component
+    entity: orders
+    aliases: [tax, sales_tax, vat, gst]
+
+  - id: order.shipping
+    type: money
+    role: component
+    entity: orders
+    aliases: [shipping, ship_amount, shipping_cost, freight]
+
+  # ---------------- payments ----------------
+  - id: payment.txn_id
+    type: string
+    role: primary_key
+    entity: payments
+    aliases: [transaction_id, txn_id, charge_id, payment_id, pi, transactionid]
+    value_hints:
+      regex: '^(pi_|ch_|txn_|py_)?[A-Za-z0-9]{6,}$'
+
+  - id: payment.order_reference
+    type: string
+    role: primary_key
+    entity: payments
+    aliases: [order_reference, order_ref, order_id, reference, description, memo]
+    value_hints:
+      regex: '^[#A-Za-z0-9\-_]{3,}$'
+
+  - id: payment.amount
+    type: money
+    role: primary_amount
+    entity: payments
+    aliases: [amount, gross, captured, payment_amount, charge_amount]
+    value_hints:
+      numeric_range: [0, 100000]
+
+  - id: payment.fee
+    type: money
+    role: fee
+    entity: payments
+    aliases: [fee, processing_fee, stripe_fee, paypal_fee]
+
+  - id: payment.net
+    type: money
+    role: settled_amount
+    entity: payments
+    aliases: [net, payout, net_amount, settled]
+
+  - id: payment.method
+    type: string
+    role: attribute
+    entity: payments
+    aliases: [method, source, brand, payment_method, card_brand]
+
+  # ---------------- inventory / SKUs ----------------
+  - id: sku.id
+    type: string
+    role: primary_key
+    entity: inventory
+    aliases: [sku, variant_sku, item_code, item_sku, product_sku, code]
+    value_hints:
+      regex: '^[A-Za-z0-9\-_]{2,}$'
+
+  - id: sku.qty_available
+    type: integer
+    role: primary_amount
+    entity: inventory
+    aliases: [quantity, qty_on_hand, available, stock, on_hand, qty, in_stock]
+    value_hints:
+      numeric_range: [0, 1000000]
+
+  - id: sku.qty_committed
+    type: integer
+    role: attribute
+    entity: inventory
+    aliases: [committed, reserved, allocated, on_order]
+
+  - id: sku.location
+    type: string
+    role: attribute
+    entity: inventory
+    aliases: [location, warehouse, bin, fc]
+
+  - id: sku.product_name
+    type: string
+    role: attribute
+    entity: inventory
+    aliases: [product_name, name, description, item_name, title]
+
+  # ---------------- invoices ----------------
+  - id: invoice.id
+    type: string
+    role: primary_key
+    entity: invoices
+    aliases: [invoice_number, invoice#, invoice_id, inv_no, invoice]
+
+  - id: invoice.amount
+    type: money
+    role: primary_amount
+    entity: invoices
+    aliases: [invoice_amount, total_due, amount_due, invoice_total]
+
+  # ---------------- purchase orders ----------------
+  - id: po.id
+    type: string
+    role: primary_key
+    entity: pos
+    aliases: [po_number, po#, po_id, purchase_order, po]
+
+  - id: po.amount
+    type: money
+    role: primary_amount
+    entity: pos
+    aliases: [po_total, ordered_value, po_amount, total_ordered]
+
+  # ---------------- shared / cross-entity ----------------
+  - id: date.event
+    type: datetime
+    role: event_time
+    entity: shared
+    aliases: [date, created_at, order_date, payment_date, settlement_date,
+              invoice_date, transaction_date, timestamp, ship_date, posted_date]
+    value_hints:
+      datetime: true
+
+  - id: party.customer
+    type: string
+    role: attribute
+    entity: shared
+    aliases: [customer, buyer, ship_to, customer_name, client]
+
+  - id: party.vendor
+    type: string
+    role: attribute
+    entity: shared
+    aliases: [vendor, supplier, vendor_name, supplier_name]
+
+  - id: currency.code
+    type: string
+    role: attribute
+    entity: shared
+    aliases: [currency, ccy, currency_code]
+    value_hints:
+      regex: '^[A-Z]{3}$'
+
+  - id: status.value
+    type: string
+    role: attribute
+    entity: shared
+    aliases: [status, state, order_status, payment_status]

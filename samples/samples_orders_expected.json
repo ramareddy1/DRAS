@@ -1,0 +1,19 @@
+{
+  "label": "orders_vs_payments",
+  "file_a": "shopify_orders.csv",
+  "file_b": "stripe_payments.csv",
+  "label_a": "Shopify",
+  "label_b": "Stripe",
+  "expected": {
+    "total_a": 200,
+    "total_b": 194,
+    "matched": 190,
+    "matched_pct": 95.0,
+    "unmatched_a": 10,
+    "unmatched_b": 4,
+    "discrepancies": 16,
+    "fuzzy_matches": 0,
+    "fee_offset": 16,
+    "total_discrepancy_value": 72.69
+  }
+}

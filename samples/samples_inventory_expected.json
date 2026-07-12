@@ -1,0 +1,19 @@
+{
+  "label": "inventory_cross_check",
+  "file_a": "shopify_inventory.csv",
+  "file_b": "threepl_stock_report.csv",
+  "label_a": "Platform",
+  "label_b": "3PL",
+  "expected": {
+    "total_a": 143,
+    "total_b": 142,
+    "matched": 135,
+    "matched_pct": 94.41,
+    "unmatched_a": 8,
+    "unmatched_b": 7,
+    "discrepancies": 22,
+    "fuzzy_matches": 0,
+    "fee_offset": 0,
+    "total_discrepancy_value": 78.0
+  }
+}
