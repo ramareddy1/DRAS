@@ -41,13 +41,22 @@ MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
 
 app = FastAPI(title="ReconOps AI", version="0.1.0")
 
+# In production the edge proxy serves frontend and API same-origin, so CORS
+# rarely applies; the env var covers split-origin setups (staging, previews).
+_cors_origins = [
+    o.strip() for o in os.getenv(
+        "RECONOPS_CORS_ORIGINS",
+        "http://localhost:5173,http://127.0.0.1:5173",
+    ).split(",") if o.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["X-Account-Id"],
+    expose_headers=["X-Account-Id", "X-Request-ID"],
 )
 
 
@@ -92,7 +101,7 @@ def _clean(obj):
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "llm_configured": is_configured()}
+    return {"ok": True, "llm_configured": is_configured(), "version": app.version}
 
 
 @app.get("/api/concepts")

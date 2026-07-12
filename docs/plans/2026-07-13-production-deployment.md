@@ -35,7 +35,7 @@
 - Modify: `backend/app/main.py:44-51` (CORS), `main.py:93-95` (health)
 - Test: `backend/tests/test_obs.py` (new file, first test)
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `backend/tests/test_obs.py`:
 ```python
@@ -63,12 +63,12 @@ def test_health_reports_version(monkeypatch):
 
 Note: `requirements-dev.txt` gains `httpx==0.27.2` now (used by TestClient in Task 2): add the line and `pip install -r requirements-dev.txt`.
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `python -m pytest tests/test_obs.py -v`
 Expected: FAIL — origins are hardcoded; health has no `version` key.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 In `main.py`, replace the CORS block:
 ```python
@@ -97,7 +97,7 @@ def health():
     return {"ok": True, "llm_configured": is_configured(), "version": app.version}
 ```
 
-- [ ] **Step 4: Verify + commit**
+- [x] **Step 4: Verify + commit**
 
 Run: `python -m pytest -q` → all pass.
 ```bash
