@@ -1,10 +1,13 @@
 """FastAPI app for ReconOps AI pilot."""
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
 import math
 import os
 import uuid
+from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Optional
 
@@ -41,7 +44,29 @@ MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
 
 from .obs import RequestLogMiddleware, setup_logging, setup_sentry
 
-app = FastAPI(title="ReconOps AI", version="0.1.0")
+_retention_logger = logging.getLogger("reconops.retention")
+
+
+async def _retention_loop():
+    """Hourly enforcement of the 24h-uploads / 7d-results retention promise —
+    runs for the life of the server, independent of request traffic."""
+    while True:
+        try:
+            storage.cleanup()
+        except Exception:
+            _retention_logger.exception("retention cleanup failed")
+        await asyncio.sleep(3600)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    storage.ensure_dirs()
+    task = asyncio.create_task(_retention_loop())
+    yield
+    task.cancel()
+
+
+app = FastAPI(title="ReconOps AI", version="0.1.0", lifespan=lifespan)
 
 setup_logging()
 setup_sentry()
@@ -84,12 +109,6 @@ def require_account(x_account_id: str = Header(default="")) -> Account:
             detail=f"Unknown account id '{x_account_id}'.",
         )
     return acc
-
-
-@app.on_event("startup")
-def _startup():
-    storage.ensure_dirs()
-    storage.cleanup()
 
 
 def _clean(obj):
@@ -204,10 +223,6 @@ async def upload_and_reconcile(
     config: str = Form(...),
     account: Account = Depends(require_account),
 ):
-    # Enforce the 24h/7d retention promise on long-lived servers — startup-only
-    # cleanup never fires again on a server that stays up.
-    storage.cleanup()
-
     try:
         cfg_dict = json.loads(config)
         cfg = ReconcileConfig(**cfg_dict)

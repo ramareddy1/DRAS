@@ -299,7 +299,7 @@ Replaces the per-upload `storage.cleanup()` (Task 8 stopgap) and the deprecated 
 **Files:**
 - Modify: `backend/app/main.py:74-77` (startup hook), upload endpoint (remove cleanup call)
 
-- [ ] **Step 1: Implement the lifespan**
+- [x] **Step 1: Implement the lifespan**
 
 Replace the `@app.on_event("startup")` block with (before `app = FastAPI(...)`):
 ```python
@@ -328,11 +328,11 @@ async def lifespan(app):
 and pass it: `app = FastAPI(title="ReconOps AI", version="0.1.0", lifespan=lifespan)`.
 Add `import logging` to main.py imports if not present.
 
-- [ ] **Step 2: Remove the per-upload cleanup**
+- [x] **Step 2: Remove the per-upload cleanup**
 
 Delete the `storage.cleanup()` call (and its comment) at the top of `upload_and_reconcile` — the scheduler owns retention now.
 
-- [ ] **Step 3: Verify + commit**
+- [x] **Step 3: Verify + commit**
 
 Run: `python -m pytest -q` → pass (TestClient's context manager exercises the lifespan).
 Run: `grep -n "on_event\|storage.cleanup()" backend/app/main.py` → only the lifespan's loop call remains.
