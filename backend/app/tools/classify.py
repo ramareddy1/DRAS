@@ -1,64 +1,38 @@
-"""Per-row classification — deterministic + LLM escalation on ambiguity.
+"""Per-row classification — deterministic verdicts + batched advisory review.
 
-The agent (Phase 3) calls `propose_classification` for every matched row.
-Most rows get a deterministic verdict from `classify_amount_diff` with high
-confidence. Rows whose deterministic confidence is below the escalation
-threshold get an LLM second-opinion that can adjust the status, refine the
-confidence, and add a human-readable Evidence line.
+The agent calls `propose_classification` for every matched row. Verdicts are
+purely deterministic (`classify_amount_diff`) — the LLM never flips a status,
+so the same file always classifies the same way.
 
-The deterministic Evidence is always preserved; the LLM contributes
-*additional* Evidence rather than replacing it. That keeps the audit trail
-intact even when the LLM is unavailable mid-job.
+Ambiguous discrepancies (status != match, confidence below the escalation
+threshold) are collected by the agent and sent to `batch_second_opinions` in
+ONE capped LLM call, ranked by $ impact. The reviewer contributes *advisory*
+Evidence lines on top of the deterministic ones — the audit trail keeps both,
+and an LLM failure can never fail or change the job.
 """
 from __future__ import annotations
 
 import json
+import os
 from typing import Any, Dict, List, Optional
 
-from ..llm import LLMUnavailable, call_claude_json, is_configured
-from ..models import Alt, Evidence, Rationale
+from ..llm import call_claude_json, is_configured
+from ..models import Evidence, Rationale
 from .amounts import classify_amount_diff
 
 
-ESCALATION_THRESHOLD = 0.75   # below this, ask the LLM for a second opinion
+ESCALATION_THRESHOLD = 0.75   # below this, a discrepancy row gets AI review
 
 
-SYSTEM_PROMPT = (
-    "You are a senior supply chain operations analyst classifying reconciliation "
-    "diffs between two systems for a small e-commerce brand. You are given a "
-    "single matched row with the deterministic classifier's current verdict and "
-    "evidence. Your job is to either (a) confirm the verdict, or (b) recommend "
-    "a different status from {match, minor, major, fee_offset} with a clear, "
-    "one-sentence reason. Always respond as JSON with this exact shape:\n"
-    "{\n"
-    '  "status": "match"|"minor"|"major"|"fee_offset",\n'
-    '  "confidence": 0.0..1.0,\n'
-    '  "reason": "one short sentence citing the numbers"\n'
-    "}\n"
-    "Do NOT add any other text. Cite the actual diff amounts and percentages "
-    "in the reason. Be conservative — only override the deterministic verdict "
-    "when there is a clear reason in the row's context."
+BATCH_SYSTEM_PROMPT = (
+    "You are a senior operations analyst reviewing reconciliation discrepancies "
+    "between two systems for a small e-commerce brand. You receive a JSON array "
+    "of rows, each with the deterministic classifier's verdict and the numbers. "
+    "For EACH row return an object:\n"
+    '{"key": <same key>, "agrees": true|false, '
+    '"note": "one short sentence citing the numbers", "confidence": 0.0..1.0}\n'
+    "Respond with a JSON array only, same order as the input. No other text."
 )
-
-
-def _row_context_for_llm(row_ctx: Dict[str, Any]) -> str:
-    """Compact payload for the LLM — only the numbers and labels that matter."""
-    return json.dumps({
-        "key": row_ctx.get("key"),
-        "amount_a": row_ctx.get("amount_a"),
-        "amount_b": row_ctx.get("amount_b"),
-        "diff_abs": row_ctx.get("diff_abs"),
-        "diff_pct": row_ctx.get("diff_pct"),
-        "match_type": row_ctx.get("match_type"),
-        "delta_days": row_ctx.get("delta_days"),
-        "current_verdict": {
-            "status": row_ctx.get("status"),
-            "confidence": row_ctx.get("_det_confidence"),
-            "evidence": row_ctx.get("_det_evidence"),
-        },
-        "label_a": row_ctx.get("label_a"),
-        "label_b": row_ctx.get("label_b"),
-    }, default=str)
 
 
 def propose_classification(
@@ -70,14 +44,13 @@ def propose_classification(
     job_id: Optional[str],
     allow_llm: bool = True,
 ) -> Rationale:
-    """Return a Rationale for one matched row.
+    """Return a deterministic Rationale for one matched row.
 
     `row_ctx` must contain: key, amount_a, amount_b, diff_abs, diff_pct,
     match_type, optionally delta_days, label_a, label_b.
 
-    If amounts are present and deterministic confidence is below the
-    escalation threshold, ask Claude for a second opinion. LLM unavailable
-    or errors → deterministic verdict stands (with a note in evidence).
+    `allow_llm` is kept for signature stability; the per-row LLM escalation
+    was replaced by the agent-level `batch_second_opinions` pass.
     """
     key = row_ctx["key"]
     a_amt = row_ctx.get("amount_a")
@@ -111,49 +84,6 @@ def propose_classification(
             weight=0.2,
         )] + evidence
 
-    # Escalate if below threshold and the LLM is available
-    if allow_llm and confidence < ESCALATION_THRESHOLD and is_configured():
-        try:
-            ctx_for_llm = {**row_ctx,
-                           "_det_confidence": confidence,
-                           "_det_evidence": [e.evidence for e in evidence]}
-            data = call_claude_json(
-                tool_name="propose_classification",
-                account_id=account_id, job_id=job_id,
-                system=SYSTEM_PROMPT,
-                messages=[{"role": "user", "content": _row_context_for_llm(ctx_for_llm)}],
-                max_tokens=200,
-            )
-            llm_status = data.get("status")
-            llm_conf = float(data.get("confidence", 0.6))
-            llm_reason = (data.get("reason") or "").strip()
-            if llm_status in ("match", "minor", "major", "fee_offset") and llm_reason:
-                # Record the LLM's evidence even when it agrees — keeps audit trail honest
-                evidence = evidence + [Evidence(
-                    source="llm_second_opinion",
-                    evidence=f"{llm_reason} (confidence {llm_conf:.2f})",
-                    weight=0.5,
-                )]
-                if llm_status != status:
-                    # LLM disagreed — promote its verdict, demote the deterministic one
-                    alts = [Alt(
-                        status=status, confidence=confidence,
-                        reason=f"deterministic classifier said {status} ({confidence:.2f})",
-                    )] + alts
-                    status = llm_status
-                    confidence = min(0.99, max(confidence, llm_conf))
-                else:
-                    # LLM agreed — slight confidence bump
-                    confidence = min(0.99, (confidence + llm_conf) / 2 + 0.05)
-        except LLMUnavailable:
-            pass
-        except Exception as e:
-            evidence = evidence + [Evidence(
-                source="llm_error",
-                evidence=f"LLM second-opinion failed ({type(e).__name__}); deterministic verdict stands",
-                weight=0.0,
-            )]
-
     return Rationale(
         row_key=key,
         status=status,
@@ -161,3 +91,67 @@ def propose_classification(
         rationale=evidence,
         alternatives=alts,
     )
+
+
+def batch_second_opinions(
+    *,
+    candidates: List[Dict[str, Any]],   # [{"rationale": Rationale, "row_ctx": {...}}]
+    account_id: str,
+    job_id: Optional[str],
+) -> Dict[str, Dict[str, Any]]:
+    """One LLM call reviewing the top-N candidates by |diff_abs|.
+
+    Appends advisory Evidence to each reviewed candidate's Rationale IN PLACE
+    (never flips status — determinism is the product guarantee). Returns
+    {row_key: llm_item} for the rows actually reviewed.
+    """
+    max_rows = int(os.getenv("RECONOPS_MAX_LLM_ROWS", "25"))
+    row_model = os.getenv("ANTHROPIC_ROW_MODEL", "claude-haiku-4-5")
+    if not candidates or max_rows <= 0 or not is_configured():
+        return {}
+
+    ranked = sorted(candidates,
+                    key=lambda c: abs(c["row_ctx"].get("diff_abs") or 0),
+                    reverse=True)[:max_rows]
+    payload = [{
+        "key": c["row_ctx"].get("key"),
+        "amount_a": c["row_ctx"].get("amount_a"),
+        "amount_b": c["row_ctx"].get("amount_b"),
+        "diff_abs": c["row_ctx"].get("diff_abs"),
+        "diff_pct": c["row_ctx"].get("diff_pct"),
+        "match_type": c["row_ctx"].get("match_type"),
+        "verdict": {"status": c["rationale"].status,
+                    "confidence": c["rationale"].confidence,
+                    "evidence": [e.evidence for e in c["rationale"].rationale]},
+    } for c in ranked]
+
+    try:
+        data = call_claude_json(
+            tool_name="batch_second_opinions",
+            account_id=account_id, job_id=job_id,
+            system=BATCH_SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": json.dumps(payload, default=str)}],
+            max_tokens=120 * len(ranked),
+            model=row_model,
+        )
+    except Exception:
+        return {}  # advisory pass — failure must never fail the job
+
+    if not isinstance(data, list):
+        return {}
+    by_key = {str(item.get("key")): item for item in data if isinstance(item, dict)}
+    reviewed: Dict[str, Dict[str, Any]] = {}
+    for c in ranked:
+        key = str(c["row_ctx"].get("key"))
+        item = by_key.get(key)
+        if not item or not (item.get("note") or "").strip():
+            continue
+        verb = "confirms" if item.get("agrees", True) else "questions"
+        c["rationale"].rationale.append(Evidence(
+            source="llm_second_opinion",
+            evidence=f"AI review {verb} the verdict: {item['note'].strip()} "
+                     f"(confidence {float(item.get('confidence', 0.6)):.2f})",
+            weight=0.3,
+        ))
+        reviewed[key] = item
+    return reviewed

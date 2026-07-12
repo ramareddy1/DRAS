@@ -419,7 +419,7 @@ Today every "minor" row (deterministic confidence 0.70 < threshold 0.75) trigger
 - Modify: `backend/.env.example` (document new knobs)
 - Test: `backend/tests/test_classify_batch.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `backend/tests/test_classify_batch.py`:
 ```python
@@ -456,12 +456,12 @@ def test_batch_respects_cap_and_is_advisory(monkeypatch):
         assert c["rationale"].status == "minor"
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `python -m pytest tests/test_classify_batch.py -v`
 Expected: FAIL — `batch_second_opinions` doesn't exist.
 
-- [ ] **Step 3: Implement the batch reviewer**
+- [x] **Step 3: Implement the batch reviewer**
 
 In `backend/app/tools/classify.py` add:
 ```python
@@ -544,7 +544,7 @@ def batch_second_opinions(
 
 In `propose_classification`, delete the entire per-row escalation block (the `if allow_llm and confidence < ESCALATION_THRESHOLD ...` section, lines 114–155) — the function becomes purely deterministic. Keep the `allow_llm` parameter for signature stability.
 
-- [ ] **Step 4: Wire into the agent**
+- [x] **Step 4: Wire into the agent**
 
 In `backend/app/agent.py` step 4 (row loop): collect candidates instead of escalating inline —
 ```python
@@ -569,7 +569,7 @@ if reviewed:
 ```
 The `record` dicts hold `rationale.model_dump()` — build records *after* the batch pass, or re-serialize: simplest is to keep `(record, rationale)` pairs during the loop and set `record["rationale"] = rationale.model_dump()` after the batch pass.
 
-- [ ] **Step 5: Stub support**
+- [x] **Step 5: Stub support**
 
 In `backend/app/llm.py` `_stub_response`, add before the final `else`:
 ```python
@@ -577,7 +577,7 @@ In `backend/app/llm.py` `_stub_response`, add before the final `else`:
         text = "[]"
 ```
 
-- [ ] **Step 6: Document the knobs**
+- [x] **Step 6: Document the knobs**
 
 Append to `backend/.env.example`:
 ```
@@ -587,12 +587,12 @@ RECONOPS_MAX_LLM_ROWS=25
 ANTHROPIC_ROW_MODEL=claude-haiku-4-5
 ```
 
-- [ ] **Step 7: Run tests + eval, re-pin snapshots if needed**
+- [x] **Step 7: Run tests + eval, re-pin snapshots if needed**
 
 Run: `python -m pytest -q` → pass.
 Run: `python -m app.eval` — statuses are now purely deterministic; if the pinned summaries in `samples/samples_*_expected.json` differ (the old stub could flip verdicts), inspect the diff, update the expected JSON to the new deterministic values, and re-run to green.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add backend/app/tools/classify.py backend/app/agent.py backend/app/llm.py backend/.env.example backend/tests/test_classify_batch.py samples/

@@ -127,11 +127,15 @@ def call_claude_json(
     try:
         return json.loads(s)
     except json.JSONDecodeError:
-        # Last resort: try to find the first { … } block
-        start = s.find("{")
-        end = s.rfind("}")
-        if start >= 0 and end > start:
-            return json.loads(s[start:end + 1])
+        # Last resort: try to find the first { … } or [ … ] block
+        for open_c, close_c in (("{", "}"), ("[", "]")):
+            start = s.find(open_c)
+            end = s.rfind(close_c)
+            if start >= 0 and end > start:
+                try:
+                    return json.loads(s[start:end + 1])
+                except json.JSONDecodeError:
+                    continue
         raise
 
 
@@ -140,7 +144,11 @@ def _stub_response(*, tool_name, account_id, job_id, system, messages, model) ->
     RECONOPS_STUB_LLM=1. Records a synthetic usage line so the audit pipeline
     is also exercised."""
     sysprompt = (system or "").lower()
-    if "operations analyst" in sysprompt:
+    # tool_name checks must come before the sysprompt sniffing — the batch
+    # reviewer's prompt also says "operations analyst".
+    if tool_name == "batch_second_opinions":
+        text = "[]"
+    elif "operations analyst" in sysprompt:
         text = (
             "**Overall match quality: excellent.** Most rows matched cleanly. "
             "16 fee-pattern discrepancies look like processor fees, not losses.\n"

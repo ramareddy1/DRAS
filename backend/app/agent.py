@@ -45,7 +45,9 @@ from .models import (
 )
 from .tools.amounts import coerce_amount
 from .tools.binding import pick_key_pair, resolve_amount_date
-from .tools.classify import propose_classification
+from .tools.classify import (
+    ESCALATION_THRESHOLD, batch_second_opinions, propose_classification,
+)
 from .tools.matching import match_by_key
 from .tools.timing import coerce_date, timing_stats
 
@@ -226,8 +228,14 @@ def run_job(
     mres = match_by_key(a, b, key_a.column_name, key_b.column_name)
 
     # --- Step 4: per-row classification ---------------------------------------
+    # Verdicts are deterministic; ambiguous discrepancies are collected and
+    # sent for ONE capped, advisory AI review after the loop. Rationales are
+    # serialized onto the records only after that pass so the advisory
+    # evidence lands in the persisted rows.
     matched_rows: List[Dict[str, Any]] = []
     discrepancy_rows: List[Dict[str, Any]] = []
+    record_rationales: List[tuple] = []          # (record, Rationale) pairs
+    escalation_candidates: List[Dict[str, Any]] = []
     deltas_days: List[float] = []
     llm_calls_made = 0
     rule_applications = 0
@@ -276,9 +284,8 @@ def run_job(
                 row_ctx=row_ctx,
                 tol_abs=tol_abs, tol_pct=tol_pct,
                 account_id=account.id, job_id=job_id,
+                allow_llm=False,
             )
-            if any(e.source == "llm_second_opinion" for e in rationale.rationale):
-                llm_calls_made += 1
 
         # Phase 5: user-taught force_status rules win over the initial verdict.
         # They're keyed on the row's signature, which is only knowable now.
@@ -295,6 +302,11 @@ def run_job(
                 fee_pattern_label = e.evidence.split(" matches ", 1)[1].split(" on ")[0]
                 break
 
+        # Ambiguous discrepancy → candidate for the capped advisory AI review.
+        # Rule-forced verdicts carry high confidence, so they self-exclude.
+        if rationale.status != "match" and rationale.confidence < ESCALATION_THRESHOLD:
+            escalation_candidates.append({"rationale": rationale, "row_ctx": row_ctx})
+
         record = {
             "key": m.key_a,
             "match_type": m.match_type,
@@ -307,11 +319,20 @@ def run_job(
             "date_a": row_a["_date"].isoformat() if pd.notna(row_a["_date"]) else None,
             "date_b": row_b["_date"].isoformat() if pd.notna(row_b["_date"]) else None,
             "delta_days": row_ctx["delta_days"],
-            "rationale": rationale.model_dump(),
         }
+        record_rationales.append((record, rationale))
         matched_rows.append(record)
         if rationale.status != "match":
             discrepancy_rows.append(record)
+
+    # --- Step 4b: one capped, batched, advisory AI review ---------------------
+    reviewed = batch_second_opinions(
+        candidates=escalation_candidates, account_id=account.id, job_id=job_id,
+    )
+    if reviewed:
+        llm_calls_made += 1
+    for record, rationale in record_rationales:
+        record["rationale"] = rationale.model_dump()
 
     # --- Step 5: unmatched rows -----------------------------------------------
     drop_internal = ["_amt", "_date"]
