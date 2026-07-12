@@ -611,7 +611,7 @@ An Anthropic outage currently takes the whole product down (503 on upload), even
 - Modify: `frontend/src/pages/ResultsPage.jsx` (banner when insights missing)
 - Test: `backend/tests/test_degradation.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `backend/tests/test_degradation.py`:
 ```python
@@ -643,12 +643,12 @@ def test_job_completes_without_api_key(monkeypatch, tmp_path):
     assert out.insights_status == "unavailable"
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `python -m pytest tests/test_degradation.py -v`
 Expected: FAIL — `run_job` raises `LLMUnavailable` (and `insights_status` doesn't exist).
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `AgentOutput` gains `insights_status: str = "ok"`. Replace agent step 8 with:
 ```python
@@ -668,12 +668,12 @@ Set `insights_status=insights_status` in the returned `AgentOutput`.
 
 In `main.py`: delete the `if not is_configured(): raise HTTPException(503 ...)` gate in `upload_and_reconcile` and the `except LLMUnavailable` handler (no longer raised); add `"insights_status": result.insights_status` to the payload.
 
-- [ ] **Step 4: Frontend banner**
+- [x] **Step 4: Frontend banner**
 
 In `ResultsPage.jsx`, where insights render, show a dismissable amber banner when `job.insights_status === "unavailable"`:
 `"AI summary unavailable for this run — matching and classification below are complete and deterministic."`
 
-- [ ] **Step 5: Verify + commit**
+- [x] **Step 5: Verify + commit**
 
 Run: `python -m pytest -q && python -m app.eval` → pass.
 

@@ -14,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 
 from .agent import AskUser, run_job
-from .llm import LLMUnavailable, is_configured
+from .llm import is_configured
 from .memory import accounts as accounts_memory
 from .memory import (
     decision_log,
@@ -177,13 +177,6 @@ async def upload_and_reconcile(
     config: str = Form(...),
     account: Account = Depends(require_account),
 ):
-    # LLM is required in v3 — fail loudly here rather than after the user waited.
-    if not is_configured():
-        raise HTTPException(
-            status_code=503,
-            detail="AI service is currently unavailable: ANTHROPIC_API_KEY not configured.",
-        )
-
     try:
         cfg_dict = json.loads(config)
         cfg = ReconcileConfig(**cfg_dict)
@@ -229,8 +222,6 @@ async def upload_and_reconcile(
         }
         storage.save_job(job_id, _clean(payload))
         return {"job_id": job_id, "status": "awaiting_user", "question": q.question, "kind": q.kind}
-    except LLMUnavailable as e:
-        raise HTTPException(status_code=503, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
@@ -246,6 +237,7 @@ async def upload_and_reconcile(
         "discrepancies": result.discrepancies,
         "timing": result.timing,
         "insights": result.insights,
+        "insights_status": result.insights_status,
         "llm_calls": result.llm_calls,
         "metrics": result.metrics.model_dump(mode="json") if result.metrics else None,
         "triage_emitted_count": len(result.triage_emitted),

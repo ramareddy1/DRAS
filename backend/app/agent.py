@@ -95,6 +95,7 @@ class AgentOutput:
     discrepancies: List[Dict[str, Any]] = field(default_factory=list)
     timing: Optional[Dict[str, Any]] = None
     insights: str = ""
+    insights_status: str = "ok"     # "ok" | "unavailable"
     llm_calls: int = 0
     # v3 / Phase 4 additions
     triage_emitted: List[TriageItem] = field(default_factory=list)
@@ -387,13 +388,20 @@ def run_job(
     )
 
     # --- Step 8: insights -----------------------------------------------------
-    # LLM-only in v3. If unavailable, this raises and the job fails loudly.
-    insights = _synthesize_insights(
-        summary=summary, label_a=label_a, label_b=label_b,
-        discrepancies=discrepancy_rows, timing=timing,
-        account=account, job_id=job_id,
-    )
-    llm_calls_made += 1
+    # Degrade gracefully: matching/classification above are deterministic and
+    # complete, so an LLM outage must never fail the job — the summary is just
+    # marked unavailable and the UI shows a banner.
+    try:
+        insights = _synthesize_insights(
+            summary=summary, label_a=label_a, label_b=label_b,
+            discrepancies=discrepancy_rows, timing=timing,
+            account=account, job_id=job_id,
+        )
+        llm_calls_made += 1
+        insights_status = "ok"
+    except Exception:
+        insights = ""
+        insights_status = "unavailable"
 
     # --- Step 9: emit TriageItems (cross-job) --------------------------------
     # Don't emit triage for unmatched rows that were suppressed by an active
@@ -431,6 +439,7 @@ def run_job(
         discrepancies=discrepancy_rows,
         timing=timing,
         insights=insights,
+        insights_status=insights_status,
         llm_calls=llm_calls_made,
         triage_emitted=emitted,
         metrics=job_metrics,

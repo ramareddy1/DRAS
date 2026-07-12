@@ -182,9 +182,16 @@ export default function ResultsPage() {
 
       <section className="mt-8 bg-white border border-slate-200 rounded-lg p-5">
         <h2 className="text-lg font-semibold text-navy mb-2">AI insights</h2>
-        <div className="prose prose-sm max-w-none whitespace-pre-wrap text-slate-700">
-          {data.insights}
-        </div>
+        {data.insights_status === "unavailable" ? (
+          <div className="rounded-md bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-800">
+            AI summary unavailable for this run — the matching and
+            classification above are complete and deterministic.
+          </div>
+        ) : (
+          <div className="prose prose-sm max-w-none whitespace-pre-wrap text-slate-700">
+            {data.insights}
+          </div>
+        )}
         {data.timing && (
           <div className="mt-4 text-xs text-slate-500">
             Timing: avg {data.timing.mean_days}d delta · range {data.timing.min_days} to {data.timing.max_days}d · {data.timing.outliers} outliers
