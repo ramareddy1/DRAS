@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Iterator, List, Optional
 
 from ..models import DecisionLogEntry
+from .fsutil import account_lock
 
 DATA_DIR = Path(os.getenv("RECONOPS_DATA_DIR", "data"))
 
@@ -27,8 +28,9 @@ def _path(account_id: str) -> Path:
 def append(account_id: str, entry: DecisionLogEntry) -> None:
     p = _path(account_id)
     p.parent.mkdir(parents=True, exist_ok=True)
-    with p.open("a", encoding="utf-8") as f:
-        f.write(entry.model_dump_json() + "\n")
+    with account_lock(account_id):
+        with p.open("a", encoding="utf-8") as f:
+            f.write(entry.model_dump_json() + "\n")
 
 
 def replay(account_id: str) -> Iterator[DecisionLogEntry]:

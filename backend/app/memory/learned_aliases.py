@@ -33,6 +33,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, Optional
 
+from .fsutil import account_lock, atomic_write_json
+
 DATA_DIR = Path(os.getenv("RECONOPS_DATA_DIR", "data"))
 
 
@@ -52,9 +54,7 @@ def _load(account_id: str) -> Dict[str, Dict]:
 
 
 def _save(account_id: str, data: Dict) -> None:
-    p = _path(account_id)
-    p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(json.dumps(data, default=str, indent=2), encoding="utf-8")
+    atomic_write_json(_path(account_id), data, indent=2)
 
 
 def lookup(account_id: str, column_name: str) -> Optional[str]:
@@ -66,26 +66,27 @@ def lookup(account_id: str, column_name: str) -> Optional[str]:
 
 def upsert(account_id: str, column_name: str, concept_id: str) -> None:
     """Record (or strengthen) a user-confirmed binding."""
-    data = _load(account_id)
-    aliases = data.setdefault("aliases", {})
-    key = _norm(column_name)
-    if not key:
-        return
-    entry = aliases.get(key, {
-        "concept_id": concept_id,
-        "confirmed_count": 0,
-        "sample_columns": [],
-    })
-    entry["concept_id"] = concept_id   # latest wins; user can override
-    entry["confirmed_count"] = entry.get("confirmed_count", 0) + 1
-    entry["last_confirmed_at"] = datetime.utcnow().isoformat()
-    samples = entry.setdefault("sample_columns", [])
-    if column_name not in samples:
-        samples.append(column_name)
-        # keep small
-        entry["sample_columns"] = samples[-5:]
-    aliases[key] = entry
-    _save(account_id, data)
+    with account_lock(account_id):
+        data = _load(account_id)
+        aliases = data.setdefault("aliases", {})
+        key = _norm(column_name)
+        if not key:
+            return
+        entry = aliases.get(key, {
+            "concept_id": concept_id,
+            "confirmed_count": 0,
+            "sample_columns": [],
+        })
+        entry["concept_id"] = concept_id   # latest wins; user can override
+        entry["confirmed_count"] = entry.get("confirmed_count", 0) + 1
+        entry["last_confirmed_at"] = datetime.utcnow().isoformat()
+        samples = entry.setdefault("sample_columns", [])
+        if column_name not in samples:
+            samples.append(column_name)
+            # keep small
+            entry["sample_columns"] = samples[-5:]
+        aliases[key] = entry
+        _save(account_id, data)
 
 
 def all_aliases(account_id: str) -> Dict[str, Dict]:

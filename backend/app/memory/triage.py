@@ -34,6 +34,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
 from ..models import Rationale, TriageItem, TriageState
+from .fsutil import account_lock, atomic_write_json
 
 DATA_DIR = Path(os.getenv("RECONOPS_DATA_DIR", "data"))
 
@@ -122,9 +123,7 @@ def _load_raw(account_id: str) -> Dict[str, Any]:
 
 
 def _save_raw(account_id: str, payload: Dict[str, Any]) -> None:
-    p = _path(account_id)
-    p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(json.dumps(payload, default=str, indent=2), encoding="utf-8")
+    atomic_write_json(_path(account_id), payload, indent=2)
 
 
 def load_all(account_id: str) -> List[TriageItem]:
@@ -191,6 +190,25 @@ def emit_for_job(
 
     Returns the items emitted (whether new or recurring).
     """
+    with account_lock(account_id):
+        return _emit_for_job(
+            account_id, job_id,
+            rationales=rationales,
+            unmatched_a=unmatched_a,
+            unmatched_b=unmatched_b,
+            rules_suppressed_signatures=rules_suppressed_signatures,
+        )
+
+
+def _emit_for_job(
+    account_id: str,
+    job_id: str,
+    *,
+    rationales: List[Dict[str, Any]],
+    unmatched_a: List[Dict[str, Any]],
+    unmatched_b: List[Dict[str, Any]],
+    rules_suppressed_signatures: Optional[Iterable[str]] = None,
+) -> List[TriageItem]:
     items = load_all(account_id)
     suppressed = set(rules_suppressed_signatures or [])
     # Anything the user has already resolved as "expected" should not re-surface.
@@ -290,16 +308,17 @@ def resolve(
     *, action: str, user_reason: Optional[str] = None,
     rule_id: Optional[str] = None,
 ) -> Optional[TriageItem]:
-    items = load_all(account_id)
-    for i in items:
-        if i.id == item_id:
-            i.state = "resolved" if action in ("mark_expected", "accept") else "deferred"
-            i.resolution = {
-                "action": action,
-                "user_reason": user_reason,
-                "rule_id": rule_id,
-                "at": datetime.utcnow().isoformat(),
-            }
-            save_all(account_id, items)
-            return i
+    with account_lock(account_id):
+        items = load_all(account_id)
+        for i in items:
+            if i.id == item_id:
+                i.state = "resolved" if action in ("mark_expected", "accept") else "deferred"
+                i.resolution = {
+                    "action": action,
+                    "user_reason": user_reason,
+                    "rule_id": rule_id,
+                    "at": datetime.utcnow().isoformat(),
+                }
+                save_all(account_id, items)
+                return i
     return None

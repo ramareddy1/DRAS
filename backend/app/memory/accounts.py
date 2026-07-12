@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Optional
 
 from ..models import Account, AccountProfile
+from .fsutil import account_lock, atomic_write_json
 
 DATA_DIR = Path(os.getenv("RECONOPS_DATA_DIR", "data"))
 ACCOUNTS_DIR = DATA_DIR / "accounts"
@@ -46,7 +47,7 @@ def _bootstrap_dirs(account_id: str) -> None:
 def create_account(display_name: Optional[str] = None) -> Account:
     acc = Account(display_name=display_name)
     _bootstrap_dirs(acc.id)
-    _profile_path(acc.id).write_text(acc.model_dump_json(indent=2), encoding="utf-8")
+    atomic_write_json(_profile_path(acc.id), json.loads(acc.model_dump_json()), indent=2)
     return acc
 
 
@@ -61,13 +62,14 @@ def load_account(account_id: str) -> Optional[Account]:
 
 
 def update_profile(account_id: str, partial: dict) -> Account:
-    acc = load_account(account_id)
-    if acc is None:
-        raise ValueError(f"Account {account_id} not found")
-    merged = acc.profile.model_dump()
-    merged.update({k: v for k, v in partial.items() if v is not None})
-    acc.profile = AccountProfile.model_validate(merged)
-    _profile_path(account_id).write_text(acc.model_dump_json(indent=2), encoding="utf-8")
+    with account_lock(account_id):
+        acc = load_account(account_id)
+        if acc is None:
+            raise ValueError(f"Account {account_id} not found")
+        merged = acc.profile.model_dump()
+        merged.update({k: v for k, v in partial.items() if v is not None})
+        acc.profile = AccountProfile.model_validate(merged)
+        atomic_write_json(_profile_path(account_id), json.loads(acc.model_dump_json()), indent=2)
     return acc
 
 

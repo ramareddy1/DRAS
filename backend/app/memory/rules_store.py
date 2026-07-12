@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from ..models import Alt, Evidence, Rationale, Rule
+from .fsutil import account_lock, atomic_write_json
 
 
 DATA_DIR = Path(os.getenv("RECONOPS_DATA_DIR", "data"))
@@ -78,9 +79,7 @@ def _load_raw(account_id: str) -> Dict[str, Any]:
 
 
 def _save_raw(account_id: str, payload: Dict[str, Any]) -> None:
-    p = _rules_path(account_id)
-    p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(json.dumps(payload, default=str, indent=2), encoding="utf-8")
+    atomic_write_json(_rules_path(account_id), payload, indent=2)
 
 
 def load_rules(account_id: str) -> List[Rule]:
@@ -101,24 +100,26 @@ def seed_defaults(account_id: str) -> None:
 
 
 def add_rule(account_id: str, rule: Rule) -> Rule:
-    rules = load_rules(account_id)
-    rules.append(rule)
-    save_rules(account_id, rules)
+    with account_lock(account_id):
+        rules = load_rules(account_id)
+        rules.append(rule)
+        save_rules(account_id, rules)
     return rule
 
 
 def update_rule(account_id: str, rule_id: str, updates: Dict[str, Any]) -> Optional[Rule]:
-    rules = load_rules(account_id)
-    for r in rules:
-        if r.id == rule_id:
-            data = r.model_dump()
-            data.update(updates)
-            new_r = Rule.model_validate(data)
-            # in-place mutation
-            idx = rules.index(r)
-            rules[idx] = new_r
-            save_rules(account_id, rules)
-            return new_r
+    with account_lock(account_id):
+        rules = load_rules(account_id)
+        for r in rules:
+            if r.id == rule_id:
+                data = r.model_dump()
+                data.update(updates)
+                new_r = Rule.model_validate(data)
+                # in-place mutation
+                idx = rules.index(r)
+                rules[idx] = new_r
+                save_rules(account_id, rules)
+                return new_r
     return None
 
 

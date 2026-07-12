@@ -27,6 +27,7 @@ from typing import Any, Dict, Iterable, List, Optional
 
 from ..models import AccountMetrics, Rationale
 from . import decision_log, rules_store
+from .fsutil import account_lock
 
 DATA_DIR = Path(os.getenv("RECONOPS_DATA_DIR", "data"))
 
@@ -138,8 +139,9 @@ def _revocation_rate(account_id: str) -> float:
 def snapshot(account_id: str, metrics: AccountMetrics) -> None:
     p = _path(account_id)
     p.parent.mkdir(parents=True, exist_ok=True)
-    with p.open("a", encoding="utf-8") as f:
-        f.write(metrics.model_dump_json() + "\n")
+    with account_lock(account_id):
+        with p.open("a", encoding="utf-8") as f:
+            f.write(metrics.model_dump_json() + "\n")
 
 
 def series(account_id: str, limit: int = 100) -> List[AccountMetrics]:

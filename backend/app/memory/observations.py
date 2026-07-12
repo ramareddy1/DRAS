@@ -19,6 +19,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional
 
+from .fsutil import account_lock
+
 DATA_DIR = Path(os.getenv("RECONOPS_DATA_DIR", "data"))
 
 
@@ -43,8 +45,9 @@ def append(
         "job_id": job_id,
         "evidence": evidence or {},
     }
-    with p.open("a", encoding="utf-8") as f:
-        f.write(json.dumps(entry, default=str) + "\n")
+    with account_lock(account_id):
+        with p.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, default=str) + "\n")
     return entry
 
 

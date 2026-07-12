@@ -7,6 +7,8 @@ import time
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from .memory.fsutil import atomic_write_json
+
 DATA_DIR = Path(os.getenv("RECONOPS_DATA_DIR", "data"))
 JOBS_DIR = DATA_DIR / "jobs"
 UPLOADS_DIR = DATA_DIR / "uploads"
@@ -26,7 +28,7 @@ def job_path(job_id: str) -> Path:
 
 def save_job(job_id: str, payload: Dict[str, Any]) -> None:
     ensure_dirs()
-    job_path(job_id).write_text(json.dumps(payload, default=str), encoding="utf-8")
+    atomic_write_json(job_path(job_id), payload)
 
 
 def load_job(job_id: str) -> Optional[Dict[str, Any]]:

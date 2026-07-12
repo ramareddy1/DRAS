@@ -156,7 +156,7 @@ Every store does unlocked read-modify-write with truncating writes. One concurre
 - Modify: `backend/app/memory/decision_log.py:27`, `notes.py:25`, `observations.py:29` (lock around JSONL appends)
 - Test: `backend/tests/test_fsutil.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `backend/tests/test_fsutil.py`:
 ```python
@@ -208,12 +208,12 @@ def test_concurrent_add_rule_loses_no_writes(data_dir, monkeypatch):
     assert len(rules) == n  # unlocked read-modify-write loses writes here
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `python -m pytest tests/test_fsutil.py -v`
 Expected: `test_concurrent_add_rule_loses_no_writes` FAILS (fewer than 25 rules survive) and the fsutil import fails (module doesn't exist yet).
 
-- [ ] **Step 3: Implement fsutil**
+- [x] **Step 3: Implement fsutil**
 
 Add `filelock==3.16.1` to `backend/requirements.txt`, run `pip install -r requirements.txt`.
 
@@ -261,7 +261,7 @@ def account_lock(account_id: str, timeout: float = 10.0) -> FileLock:
     return FileLock(str(lock_dir / ".lock"), timeout=timeout)
 ```
 
-- [ ] **Step 4: Convert the whole-file writers**
+- [x] **Step 4: Convert the whole-file writers**
 
 In `rules_store.py`, replace `_save_raw` body and wrap the mutators:
 ```python
@@ -284,16 +284,16 @@ Apply the identical pattern (lock across load→mutate→save, atomic write insi
 - `accounts.create_account` / `accounts.update_profile` → write profile via `atomic_write_json(_profile_path(...), json.loads(acc.model_dump_json()), indent=2)`
 - `storage.save_job` → `atomic_write_json(job_path(job_id), payload)` (no account lock needed — job ids are single-writer)
 
-- [ ] **Step 5: Lock the JSONL appenders**
+- [x] **Step 5: Lock the JSONL appenders**
 
 In `decision_log.append`, `notes.append`, `observations.append`, wrap the existing `with p.open("a", ...)` block in `with account_lock(account_id):` (import from `.fsutil`). Appends stay append-mode; the lock serializes them across requests.
 
-- [ ] **Step 6: Run tests + eval**
+- [x] **Step 6: Run tests + eval**
 
 Run: `python -m pytest -q` → all pass, including the 25-thread test.
 Run: `python -m app.eval` → exit 0 (no behavior change).
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add backend/app/memory/fsutil.py backend/app/memory/*.py backend/app/storage.py backend/requirements.txt backend/tests/test_fsutil.py
