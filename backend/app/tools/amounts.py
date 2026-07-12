@@ -10,6 +10,7 @@ storage.
 """
 from __future__ import annotations
 
+import re
 from typing import List, Tuple
 
 import pandas as pd
@@ -23,6 +24,28 @@ def coerce_amount(s: pd.Series) -> pd.Series:
     cleaned = s.astype(str).str.replace(r"[$,€£\s]", "", regex=True)
     cleaned = cleaned.str.replace(r"^\((.+)\)$", r"-\1", regex=True)  # (100) -> -100
     return pd.to_numeric(cleaned, errors="coerce")
+
+
+_CURRENCY_MAP = {"$": "USD", "€": "EUR", "£": "GBP", "¥": "JPY", "R$": "BRL"}
+_CURRENCY_RE = re.compile(
+    r"(R\$|[$€£¥])|\b(USD|EUR|GBP|BRL|CAD|AUD|INR|JPY|MXN)\b", re.IGNORECASE
+)
+
+
+def detect_currency_tokens(s: pd.Series, sample_n: int = 50) -> set:
+    """Best-effort currency detection from raw (pre-coercion) amount values.
+
+    Returns a set of ISO codes found in the sample — empty for bare numbers.
+    Symbols map to their most common code ($ -> USD); this is a guard against
+    silently comparing across currencies, not a converter.
+    """
+    out = set()
+    for v in s.dropna().astype(str).head(sample_n):
+        m = _CURRENCY_RE.search(v)
+        if m:
+            token = (m.group(1) or m.group(2)).upper()
+            out.add(_CURRENCY_MAP.get(token, token))
+    return out
 
 
 # (rule_id, human_label, predicate(a, b) -> bool)

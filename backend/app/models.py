@@ -78,6 +78,8 @@ class ReconcileConfig(BaseModel):
     label_b: str = "Source B"
     amount_tolerance_abs: float = 0.01
     amount_tolerance_pct: float = 0.005  # 0.5%
+    # Escape hatch for the mixed-currency guard (user explicitly accepts risk)
+    allow_mixed_currency: bool = False
 
 
 class PreviewResponse(BaseModel):

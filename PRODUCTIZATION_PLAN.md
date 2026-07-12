@@ -1036,7 +1036,7 @@ git commit -m "feat: many-to-one matching via normalized-key aggregation"
 - Modify: `backend/app/agent.py` (guard before coercion), `backend/app/models.py` (`ReconcileConfig.allow_mixed_currency: bool = False`)
 - Test: `backend/tests/test_currency.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `backend/tests/test_currency.py`:
 ```python
@@ -1056,11 +1056,11 @@ def test_bare_numbers_yield_empty_set():
     assert detect_currency_tokens(pd.Series([10.0, 20.5])) == set()
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `python -m pytest tests/test_currency.py -v` → FAIL.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 In `amounts.py`:
 ```python
@@ -1094,7 +1094,7 @@ In `agent.py`, before the `_amt` coercion:
 ```
 (`ValueError` already maps to HTTP 400 in `main.py`.)
 
-- [ ] **Step 4: Verify + commit**
+- [x] **Step 4: Verify + commit**
 
 Run: `python -m pytest -q && python -m app.eval` → pass (samples are all `$`/bare, no behavior change).
 

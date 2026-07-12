@@ -37,7 +37,7 @@ from .models import (
     Account, AccountMetrics, BindingSet, Rationale, ReconcileConfig,
     Summary, Evidence, TriageItem,
 )
-from .tools.amounts import coerce_amount
+from .tools.amounts import coerce_amount, detect_currency_tokens
 from .tools.binding import pick_key_pair, resolve_amount_date
 from .tools.classify import (
     ESCALATION_THRESHOLD, batch_second_opinions, propose_classification,
@@ -197,6 +197,18 @@ def run_job(
 
     amt_a_col, date_a_col = resolve_amount_date(cfg.source_a, df_a)
     amt_b_col, date_b_col = resolve_amount_date(cfg.source_b, df_b)
+
+    # Mixed-currency guard: comparing USD against BRL "reconciles" garbage
+    # with no warning. Refuse loudly unless the user explicitly overrides.
+    if amt_a_col and amt_b_col and not cfg.allow_mixed_currency:
+        cur_a = detect_currency_tokens(df_a[amt_a_col])
+        cur_b = detect_currency_tokens(df_b[amt_b_col])
+        if cur_a and cur_b and not (cur_a & cur_b):
+            raise ValueError(
+                f"Source A amounts look like {sorted(cur_a)} but Source B looks like "
+                f"{sorted(cur_b)}. Cross-currency reconciliation is not supported yet — "
+                "convert one file first, or set allow_mixed_currency to override."
+            )
 
     # --- Step 2: coerce auxiliary columns -------------------------------------
     a = df_a.copy()
