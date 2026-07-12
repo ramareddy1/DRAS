@@ -372,7 +372,7 @@ Then check: `gh run watch` (or the Actions tab) — both jobs must pass before c
 - Create: `backend/app/config.py`
 - Modify: `backend/app/storage.py:10`, `backend/app/llm.py:18`, `backend/app/memory/fsutil.py`, `backend/app/memory/{accounts,rules_store,triage,metrics,decision_log,notes,observations,learned_aliases}.py` (each module's `DATA_DIR` line)
 
-- [ ] **Step 1: Create config module**
+- [x] **Step 1: Create config module**
 
 `backend/app/config.py`:
 ```python
@@ -386,17 +386,17 @@ _BACKEND_ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = Path(os.getenv("RECONOPS_DATA_DIR") or (_BACKEND_ROOT / "data"))
 ```
 
-- [ ] **Step 2: Point every module at it**
+- [x] **Step 2: Point every module at it**
 
 In each listed file, replace the local `DATA_DIR = Path(os.getenv("RECONOPS_DATA_DIR", "data"))` with `from ..config import DATA_DIR` (memory modules) / `from .config import DATA_DIR` (storage.py, llm.py — for llm.py derive `USAGE_LOG_PATH = DATA_DIR / "llm_usage.jsonl"`). In `storage.py` keep `JOBS_DIR`/`UPLOADS_DIR` derived from the imported `DATA_DIR`.
 
 Note: `app/eval.py` sets `RECONOPS_DATA_DIR` in `os.environ` *before* importing app modules — that ordering keeps working because config reads the env var at import time. Do not import `app.config` at the top of `eval.py` before the env assignment.
 
-- [ ] **Step 3: Migrate stray data**
+- [x] **Step 3: Migrate stray data**
 
 If `<repo>/data/` (root) contains account dirs, move its contents into `backend/data/` and delete the root `data/` folder.
 
-- [ ] **Step 4: Verify + commit**
+- [x] **Step 4: Verify + commit**
 
 Run: `python -m pytest -q && python -m app.eval` → both pass.
 Run: `uvicorn app.main:app --port 8000` from `backend/`, hit `GET /api/health`, confirm no new `data/` folder appears anywhere but `backend/data/`.

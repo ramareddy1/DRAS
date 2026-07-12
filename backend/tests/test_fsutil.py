@@ -20,9 +20,11 @@ def test_atomic_write_json_replaces_not_truncates(data_dir):
 
 
 def test_concurrent_add_rule_loses_no_writes(data_dir, monkeypatch):
-    # Re-import with patched DATA_DIR (module-level constant)
+    # Re-import with patched DATA_DIR (module-level constant). fsutil first so
+    # the account lock lives in the same temp dir as the data it guards.
     import importlib
-    from app.memory import rules_store
+    from app.memory import fsutil, rules_store
+    importlib.reload(fsutil)
     importlib.reload(rules_store)
     from app.models import Rule
 

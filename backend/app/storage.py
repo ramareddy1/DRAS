@@ -7,9 +7,10 @@ import time
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from .config import data_dir
 from .memory.fsutil import atomic_write_json
 
-DATA_DIR = Path(os.getenv("RECONOPS_DATA_DIR", "data"))
+DATA_DIR = data_dir()
 JOBS_DIR = DATA_DIR / "jobs"
 UPLOADS_DIR = DATA_DIR / "uploads"
 

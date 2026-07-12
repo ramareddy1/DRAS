@@ -14,8 +14,10 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import HTTPException
 
+from .config import data_dir
+
 DEFAULT_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-opus-4-7")
-USAGE_LOG_PATH = Path(os.getenv("RECONOPS_DATA_DIR", "data")) / "llm_usage.jsonl"
+USAGE_LOG_PATH = data_dir() / "llm_usage.jsonl"
 
 
 class LLMUnavailable(Exception):

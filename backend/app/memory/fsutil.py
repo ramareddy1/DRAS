@@ -16,7 +16,9 @@ from typing import Any
 
 from filelock import FileLock
 
-DATA_DIR = Path(os.getenv("RECONOPS_DATA_DIR", "data"))
+from ..config import data_dir
+
+DATA_DIR = data_dir()
 
 
 def atomic_write_json(path: Path, payload: Any, indent: int | None = None) -> None:

@@ -33,9 +33,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, Optional
 
+from ..config import data_dir
 from .fsutil import account_lock, atomic_write_json
 
-DATA_DIR = Path(os.getenv("RECONOPS_DATA_DIR", "data"))
+DATA_DIR = data_dir()
 
 
 def _path(account_id: str) -> Path:

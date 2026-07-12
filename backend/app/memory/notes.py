@@ -15,9 +15,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from ..config import data_dir
 from .fsutil import account_lock
 
-DATA_DIR = Path(os.getenv("RECONOPS_DATA_DIR", "data"))
+DATA_DIR = data_dir()
 
 
 def _path(account_id: str) -> Path:

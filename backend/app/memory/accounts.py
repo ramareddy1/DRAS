@@ -16,10 +16,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
+from ..config import data_dir
 from ..models import Account, AccountProfile
 from .fsutil import account_lock, atomic_write_json
 
-DATA_DIR = Path(os.getenv("RECONOPS_DATA_DIR", "data"))
+DATA_DIR = data_dir()
 ACCOUNTS_DIR = DATA_DIR / "accounts"
 
 # UUID v4 with dashes, lowercase hex
