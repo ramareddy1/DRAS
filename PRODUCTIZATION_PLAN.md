@@ -694,7 +694,7 @@ git commit -m "feat: jobs complete deterministically when LLM is unavailable"
 - Modify: `frontend/src/pages/ResultsPage.jsx` (warning banner)
 - Test: extend `backend/tests/test_degradation.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to `backend/tests/test_degradation.py`:
 ```python
@@ -728,12 +728,12 @@ def test_low_confidence_join_proceeds_with_warning(monkeypatch, tmp_path):
     assert out.summary.matched >= 1  # it proceeded anyway
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `python -m pytest tests/test_degradation.py -v`
 Expected: FAIL — `run_job` raises `AskUser` / `binding_warning` doesn't exist.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 In `agent.py`: delete the `AskUser` class. `AgentOutput` gains `binding_warning: Optional[Dict[str, Any]] = None`. Replace the `raise AskUser(...)` block with:
 ```python
@@ -757,7 +757,7 @@ In `main.py`: remove `AskUser` from the import, delete the `except AskUser` bloc
 
 In `ResultsPage.jsx`: render `job.binding_warning.message` in the same banner style as Task 6 when present.
 
-- [ ] **Step 4: Verify + commit**
+- [x] **Step 4: Verify + commit**
 
 Run: `python -m pytest -q && python -m app.eval` → pass.
 Run: `grep -rn "awaiting_user\|pending_question" backend/app frontend/src` → remaining hits should only be in `_load_job_for_account`-adjacent legacy read paths (old persisted jobs may still carry the fields); remove any frontend rendering of them.

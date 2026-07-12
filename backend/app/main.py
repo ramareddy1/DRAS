@@ -13,7 +13,7 @@ from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadF
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 
-from .agent import AskUser, run_job
+from .agent import run_job
 from .llm import is_configured
 from .memory import accounts as accounts_memory
 from .memory import (
@@ -196,7 +196,6 @@ async def upload_and_reconcile(
 
     job_id = str(uuid.uuid4())
 
-    # Skeleton payload — populated whether the agent completes or pauses on a question
     base_payload = {
         "job_id": job_id,
         "account_id": account.id,
@@ -210,18 +209,6 @@ async def upload_and_reconcile(
 
     try:
         result = run_job(account=account, df_a=df_a, df_b=df_b, cfg=cfg, job_id=job_id)
-    except AskUser as q:
-        payload = {
-            **base_payload,
-            "status": "awaiting_user",
-            "pending_question": {
-                "question": q.question,
-                "kind": q.kind,
-                "context": q.context,
-            },
-        }
-        storage.save_job(job_id, _clean(payload))
-        return {"job_id": job_id, "status": "awaiting_user", "question": q.question, "kind": q.kind}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
@@ -244,48 +231,10 @@ async def upload_and_reconcile(
         "rule_applications": result.rule_applications,
         "expected_unmatched_a": result.expected_unmatched_a,
         "expected_unmatched_b": result.expected_unmatched_b,
+        "binding_warning": result.binding_warning,
     }
     storage.save_job(job_id, _clean(payload))
     return {"job_id": job_id, "status": "complete"}
-
-
-@app.post("/api/jobs/{job_id}/answer")
-async def answer_pending_question(
-    job_id: str,
-    payload: dict,
-    account: Account = Depends(require_account),
-):
-    """Resume a paused (awaiting_user) job with the user's answer.
-
-    Pilot expects: { "answer": "<string or structured choice>" }. For Phase 3
-    the only ask kind is "confirm_join" — the answer is interpreted as either
-    "yes proceed" (keep current bindings) or a structured pair telling us to
-    rebind. For now we accept "yes" to continue with the originally proposed
-    join.
-    """
-    job = storage.load_job(job_id)
-    if not job or job.get("account_id") != account.id:
-        raise HTTPException(status_code=404, detail="Job not found")
-    if job.get("status") != "awaiting_user":
-        raise HTTPException(status_code=409, detail=f"Job not awaiting user input (status={job.get('status')}).")
-    if not is_configured():
-        raise HTTPException(status_code=503, detail="AI service is currently unavailable.")
-
-    answer = (payload or {}).get("answer", "")
-    job["pending_answer"] = answer
-    job["status"] = "processing"
-    storage.save_job(job_id, _clean(job))
-
-    # For Phase 3 we only support the "confirm" path: rerun the agent with the
-    # same config but allow it past the ASK_USER threshold by bumping binding
-    # confidences to user_confirmed-equivalent.
-    # The frontend will route richer "rebind" responses here in Phase 5.
-    raise HTTPException(
-        status_code=501,
-        detail="Answer protocol implemented at the storage level; full resume "
-               "lands with Phase 5 UI. For Phase 3, run /api/upload again with "
-               "user_confirmed bindings to proceed.",
-    )
 
 
 def _backfill_rationale(rows):

@@ -6,22 +6,16 @@ only when needed.
 
 Per-job loop (sketch):
   1. ingest both files
-  2. resolve primary_key pair via binding.pick_key_pair (raise to ask_user
-     if no high-confidence candidate)
+  2. resolve primary_key pair via binding.pick_key_pair (attach a
+     binding_warning to the result if confidence is low — never pause)
   3. resolve amount/date columns per side
   4. match_by_key
-  5. per matched row: propose_classification (LLM escalation on ambiguity)
+  5. per matched row: propose_classification (deterministic), then one
+     capped batched advisory LLM review over ambiguous discrepancies
   6. per unmatched row: build a "no partner" rationale
   7. timing_stats
-  8. synthesize_insights via LLM
+  8. synthesize_insights via LLM (degrades to insights_status=unavailable)
   9. assemble the result
-
-ask_user protocol:
-  When a step needs human input, the agent raises AskUser(question, …).
-  The caller (main.py) catches this, persists the job as
-  status='awaiting_user' with the question payload, and returns. The user
-  answers via POST /api/jobs/{id}/answer, which calls back into the agent
-  with the answer applied and the job re-runs from scratch.
 """
 from __future__ import annotations
 
@@ -52,8 +46,8 @@ from .tools.matching import match_by_key
 from .tools.timing import coerce_date, timing_stats
 
 
-# Confidence below which we ask the user to confirm a primary-key binding
-ASK_USER_BINDING_THRESHOLD = 0.5
+# Confidence below which the result carries a join warning banner
+BINDING_WARNING_THRESHOLD = 0.5
 
 
 def _first_key_value(row: Dict[str, Any]) -> Any:
@@ -67,19 +61,6 @@ def _first_key_value(row: Dict[str, Any]) -> Any:
         if v is not None:
             return v
     return ""
-
-
-# ---------------------------------------------------------------------------
-# Pause / resume protocol
-# ---------------------------------------------------------------------------
-
-class AskUser(Exception):
-    """The agent needs human input to proceed."""
-    def __init__(self, question: str, kind: str, context: Dict[str, Any]):
-        super().__init__(question)
-        self.question = question
-        self.kind = kind            # "rebind_key" | "confirm_join" | …
-        self.context = context
 
 
 # ---------------------------------------------------------------------------
@@ -103,6 +84,7 @@ class AgentOutput:
     rule_applications: int = 0
     expected_unmatched_a: int = 0
     expected_unmatched_b: int = 0
+    binding_warning: Optional[Dict[str, Any]] = None
 
 
 # ---------------------------------------------------------------------------
@@ -173,9 +155,9 @@ def run_job(
     """Run one reconciliation end-to-end for an account.
 
     Raises:
-        AskUser — if a binding is too low-confidence to proceed safely
-        LLMUnavailable — if the API key is missing (insights are required)
-        ValueError — if files / bindings are structurally incompatible
+        ValueError — if files / bindings are structurally incompatible.
+    LLM outages degrade (insights_status="unavailable") and low-confidence
+    joins proceed with a binding_warning — neither fails the job.
     """
     label_a = cfg.label_a
     label_b = cfg.label_b
@@ -195,24 +177,23 @@ def run_job(
     key_a, key_b, key_overlap = pick_key_pair(cfg.source_a, cfg.source_b, df_a, df_b)
 
     # If both side key bindings have very low confidence AND the overlap is
-    # not overwhelming, ask the user to confirm.
-    if min(key_a.confidence, key_b.confidence) < ASK_USER_BINDING_THRESHOLD and key_overlap < 0.5:
-        raise AskUser(
-            question=(
-                f"I'm not confident about the join columns. I picked "
-                f"'{key_a.column_name}' (Source A) and '{key_b.column_name}' (Source B), "
-                f"but I'm only {min(key_a.confidence, key_b.confidence)*100:.0f}% sure. "
-                f"Their value overlap is {key_overlap*100:.0f}%. Continue, or pick different columns?"
+    # not overwhelming, proceed anyway but flag the join prominently — a
+    # paused job the user can't resume is worse than a warned result.
+    binding_warning = None
+    if min(key_a.confidence, key_b.confidence) < BINDING_WARNING_THRESHOLD and key_overlap < 0.5:
+        binding_warning = {
+            "message": (
+                f"Low confidence in the join: '{key_a.column_name}' (Source A) ↔ "
+                f"'{key_b.column_name}' (Source B), value overlap {key_overlap*100:.0f}%. "
+                "Results below assume this join — re-upload with corrected "
+                "column bindings if it looks wrong."
             ),
-            kind="confirm_join",
-            context={
-                "proposed_a": key_a.column_name,
-                "proposed_b": key_b.column_name,
-                "overlap": round(key_overlap, 3),
-                "alternatives_a": [b.column_name for b in cfg.source_a.bindings if b is not key_a],
-                "alternatives_b": [b.column_name for b in cfg.source_b.bindings if b is not key_b],
-            },
-        )
+            "proposed_a": key_a.column_name,
+            "proposed_b": key_b.column_name,
+            "overlap": round(key_overlap, 3),
+            "alternatives_a": [b.column_name for b in cfg.source_a.bindings if b is not key_a],
+            "alternatives_b": [b.column_name for b in cfg.source_b.bindings if b is not key_b],
+        }
 
     amt_a_col, date_a_col = resolve_amount_date(cfg.source_a, df_a)
     amt_b_col, date_b_col = resolve_amount_date(cfg.source_b, df_b)
@@ -440,6 +421,7 @@ def run_job(
         timing=timing,
         insights=insights,
         insights_status=insights_status,
+        binding_warning=binding_warning,
         llm_calls=llm_calls_made,
         triage_emitted=emitted,
         metrics=job_metrics,

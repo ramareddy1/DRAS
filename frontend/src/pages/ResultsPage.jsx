@@ -139,6 +139,13 @@ export default function ResultsPage() {
         </div>
       </div>
 
+      {data.binding_warning && (
+        <div className="mb-4 rounded-md bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-800">
+          <span className="font-semibold">Check the join: </span>
+          {data.binding_warning.message}
+        </div>
+      )}
+
       <AuditBand data={data} onAudit={() => setTab("matched")} />
 
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
