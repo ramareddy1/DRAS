@@ -114,7 +114,7 @@ git commit -m "feat: env-driven CORS origins + version in health"
 - Modify: `backend/app/main.py` (wire middleware + setup)
 - Test: `backend/tests/test_obs.py` (append)
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to `backend/tests/test_obs.py`:
 ```python
@@ -133,11 +133,11 @@ def test_request_id_header_and_access_log(monkeypatch, capsys):
     assert '"account_id": "acc-123"' in logged
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `python -m pytest tests/test_obs.py -v` → FAIL (no X-Request-ID header, no JSON log line).
 
-- [ ] **Step 3: Implement obs.py**
+- [x] **Step 3: Implement obs.py**
 
 `backend/app/obs.py`:
 ```python
@@ -227,7 +227,7 @@ def setup_sentry() -> bool:
     return True
 ```
 
-- [ ] **Step 4: Wire into main.py**
+- [x] **Step 4: Wire into main.py**
 
 Right after `app = FastAPI(...)`:
 ```python
@@ -239,7 +239,7 @@ app.add_middleware(RequestLogMiddleware)
 ```
 (Middleware order: added after CORSMiddleware is fine — CORS wraps outermost either way for our purposes.)
 
-- [ ] **Step 5: Verify + commit**
+- [x] **Step 5: Verify + commit**
 
 Run: `python -m pytest -q` → all pass. Also boot `uvicorn app.main:app --port 8023`, hit `/api/health`, and eyeball one JSON line on stdout; kill the server.
 

@@ -39,7 +39,13 @@ load_dotenv()
 
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
 
+from .obs import RequestLogMiddleware, setup_logging, setup_sentry
+
 app = FastAPI(title="ReconOps AI", version="0.1.0")
+
+setup_logging()
+setup_sentry()
+app.add_middleware(RequestLogMiddleware)
 
 # In production the edge proxy serves frontend and API same-origin, so CORS
 # rarely applies; the env var covers split-origin setups (staging, previews).
