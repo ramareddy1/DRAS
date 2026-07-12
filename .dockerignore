@@ -1,0 +1,12 @@
+.git
+backend/.venv
+backend/data
+data
+frontend/node_modules
+frontend/dist
+samples/Kaggle
+samples/olist
+docs
+**/__pycache__
+*.pyc
+.env

@@ -1,0 +1,36 @@
+services:
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips=*
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:?set in .env}
+      - ANTHROPIC_MODEL=${ANTHROPIC_MODEL:-}
+      - ANTHROPIC_ROW_MODEL=${ANTHROPIC_ROW_MODEL:-claude-haiku-4-5}
+      - RECONOPS_MAX_LLM_ROWS=${RECONOPS_MAX_LLM_ROWS:-25}
+      - SENTRY_DSN=${SENTRY_DSN:-}
+      - RECONOPS_ENV=${RECONOPS_ENV:-production}
+      - RECONOPS_CORS_ORIGINS=${RECONOPS_CORS_ORIGINS:-}
+    volumes:
+      - reconops-data:/app/data
+
+  edge:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.edge
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - RECONOPS_DOMAIN=${RECONOPS_DOMAIN:-}
+    volumes:
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  reconops-data:
+  caddy-data:
+  caddy-config:

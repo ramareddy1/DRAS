@@ -350,7 +350,7 @@ git commit -m "feat: hourly retention scheduler via lifespan (replaces per-uploa
 - Create: `deploy/Dockerfile.edge`, `deploy/Caddyfile`, `deploy/env.example`
 - Create: `docker-compose.prod.yml`
 
-- [ ] **Step 1: Edge image (multi-stage)**
+- [x] **Step 1: Edge image (multi-stage)**
 
 `deploy/Dockerfile.edge`:
 ```dockerfile
@@ -386,7 +386,7 @@ COPY --from=build /app/dist /srv
 ```
 (Note: Caddyfile requires tabs for indentation.)
 
-- [ ] **Step 2: Production compose file**
+- [x] **Step 2: Production compose file**
 
 `docker-compose.prod.yml` (repo root):
 ```yaml
@@ -443,7 +443,7 @@ RECONOPS_CORS_ORIGINS=
 RECONOPS_ENV=production
 ```
 
-- [ ] **Step 3: Verify the full stack locally**
+- [ ] **Step 3: Verify the full stack locally** *(pending: Docker engine blocked by kernel-held stale socket — verify after next Windows reboot; CI builds both images meanwhile)*
 
 ```bash
 cd <repo-root>
@@ -455,7 +455,7 @@ docker compose -f docker-compose.prod.yml down
 ```
 Expected: health OK **through the proxy**, static frontend served, JSON logs visible. (Docker 29 is installed on this machine — run this for real, not hypothetically.)
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add deploy/ docker-compose.prod.yml
