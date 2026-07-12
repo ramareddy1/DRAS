@@ -177,6 +177,10 @@ async def upload_and_reconcile(
     config: str = Form(...),
     account: Account = Depends(require_account),
 ):
+    # Enforce the 24h/7d retention promise on long-lived servers — startup-only
+    # cleanup never fires again on a server that stays up.
+    storage.cleanup()
+
     try:
         cfg_dict = json.loads(config)
         cfg = ReconcileConfig(**cfg_dict)
@@ -279,6 +283,12 @@ def _load_job_for_account(job_id: str, account: Account) -> dict:
         _backfill_rationale(job.get("matched", []))
         _backfill_rationale(job.get("discrepancies", []))
     return job
+
+
+@app.get("/api/jobs")
+def list_jobs_endpoint(account: Account = Depends(require_account)):
+    """Server-side job history — survives cleared browser storage."""
+    return _clean({"jobs": storage.list_jobs(account.id)})
 
 
 @app.get("/api/status/{job_id}")

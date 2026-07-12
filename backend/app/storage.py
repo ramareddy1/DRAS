@@ -39,6 +39,39 @@ def load_job(job_id: str) -> Optional[Dict[str, Any]]:
     return json.loads(p.read_text(encoding="utf-8"))
 
 
+def list_jobs(account_id: str, limit: int = 50) -> list:
+    """Lightweight job listing for one account, newest first.
+
+    O(n) scan over the jobs dir — fine at pilot scale (jobs expire after 7
+    days); Postgres replaces this in Phase 2.
+    """
+    ensure_dirs()
+    out = []
+    for p in JOBS_DIR.glob("*.json"):
+        try:
+            job = json.loads(p.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if job.get("account_id") != account_id:
+            continue
+        s = job.get("summary") or {}
+        out.append({
+            "job_id": job.get("job_id"),
+            "account_id": job.get("account_id"),
+            "created_at": job.get("created_at"),
+            "status": job.get("status", "complete"),
+            "filenames": job.get("filenames"),
+            "recon_type": (job.get("config") or {}).get("recon_type"),
+            "label_a": (job.get("config") or {}).get("label_a"),
+            "label_b": (job.get("config") or {}).get("label_b"),
+            "matched_pct": s.get("matched_pct"),
+            "discrepancies": s.get("discrepancies"),
+            "total_discrepancy_value": s.get("total_discrepancy_value"),
+        })
+    out.sort(key=lambda j: j.get("created_at") or "", reverse=True)
+    return out[:limit]
+
+
 def cleanup():
     ensure_dirs()
     now = time.time()

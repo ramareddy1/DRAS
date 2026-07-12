@@ -1,9 +1,38 @@
 import { Link } from "react-router-dom";
+import { useEffect, useState } from "react";
 import { loadHistory, clearHistory } from "../history.js";
-import { useState } from "react";
+import { getJobs } from "../api/client.js";
+
+function fromServer(j) {
+  return {
+    job_id: j.job_id,
+    created_at: j.created_at,
+    recon_type: j.recon_type,
+    file_a: (j.filenames || {}).a,
+    file_b: (j.filenames || {}).b,
+    match_rate: j.matched_pct,
+    discrepancy_value: j.total_discrepancy_value,
+  };
+}
 
 export default function HistoryPage() {
-  const [items, setItems] = useState(loadHistory());
+  const [items, setItems] = useState(null); // null = loading
+  const [fromLocal, setFromLocal] = useState(false);
+
+  useEffect(() => {
+    // Server history is the source of truth (survives cleared browser
+    // storage); localStorage is only a fallback when the API is unreachable.
+    getJobs()
+      .then((d) => setItems((d.jobs || []).map(fromServer)))
+      .catch(() => {
+        setFromLocal(true);
+        setItems(loadHistory());
+      });
+  }, []);
+
+  if (items === null) {
+    return <div className="text-center py-12 text-slate-400">Loading…</div>;
+  }
 
   if (!items.length) {
     return (
@@ -18,11 +47,18 @@ export default function HistoryPage() {
     <div>
       <div className="flex justify-between items-baseline mb-4">
         <h1 className="text-2xl font-semibold text-navy">History</h1>
-        <button
-          onClick={() => { clearHistory(); setItems([]); }}
-          className="text-xs text-slate-500 hover:text-bad"
-        >Clear</button>
+        {fromLocal && (
+          <button
+            onClick={() => { clearHistory(); setItems([]); }}
+            className="text-xs text-slate-500 hover:text-bad"
+          >Clear</button>
+        )}
       </div>
+      {fromLocal && (
+        <p className="text-xs text-amber-700 mb-3">
+          Server unreachable — showing this browser's local history.
+        </p>
+      )}
       <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
         <table className="min-w-full text-sm">
           <thead className="bg-slate-100">

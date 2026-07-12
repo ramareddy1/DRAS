@@ -37,6 +37,10 @@ export async function getMyAccount() {
   return handle(await accountFetch(`${BASE}/api/accounts/me`));
 }
 
+export async function getJobs() {
+  return handle(await accountFetch(`${BASE}/api/jobs`));
+}
+
 /**
  * Export URL needs the account ID; since <a href> can't carry headers, we
  * include the account ID as a query param. (Pilot only; we'll switch to a

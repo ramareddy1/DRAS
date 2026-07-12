@@ -779,7 +779,7 @@ Job history lives only in browser localStorage; retention cleanup only runs at p
 - Modify: `frontend/src/pages/HistoryPage.jsx`, `frontend/src/api/client.js`
 - Test: `backend/tests/test_storage.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `backend/tests/test_storage.py`:
 ```python
@@ -800,11 +800,11 @@ def test_list_jobs_filters_by_account_and_sorts(tmp_path, monkeypatch):
     assert [j["job_id"] for j in jobs] == ["j2", "j1"]
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `python -m pytest tests/test_storage.py -v` → FAIL: no `list_jobs`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 In `storage.py`:
 ```python
@@ -841,12 +841,12 @@ def list_jobs_endpoint(account: Account = Depends(require_account)):
 ```
 and add `storage.cleanup()` as the first line of `upload_and_reconcile` (cheap directory scan; enforces the 24h/7d retention promise on live servers).
 
-- [ ] **Step 4: Frontend**
+- [x] **Step 4: Frontend**
 
 `client.js`: add `export async function getJobs() { return handle(await accountFetch(`${BASE}/api/jobs`)); }`
 `HistoryPage.jsx`: fetch `getJobs()` on mount and render the server list as the primary source; keep the localStorage list only as a fallback when the request fails.
 
-- [ ] **Step 5: Verify + commit**
+- [x] **Step 5: Verify + commit**
 
 Run: `python -m pytest -q` → pass. Manual: run backend + frontend, upload a sample pair, confirm History shows the job in a fresh incognito window *after* adopting the same account via `?account=<uuid>`.
 
