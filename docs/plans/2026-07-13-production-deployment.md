@@ -257,11 +257,11 @@ git commit -m "feat: structured JSON access logs with round-tripped request IDs"
 - Modify: `backend/app/main.py` (tags in upload endpoint)
 - Modify: `backend/.env.example` (document `SENTRY_DSN`)
 
-- [ ] **Step 1: Add the dependency**
+- [x] **Step 1: Add the dependency**
 
 Append `sentry-sdk[fastapi]==2.19.2` to `backend/requirements.txt`; run `pip install -r requirements.txt`.
 
-- [ ] **Step 2: Tag events with account + job**
+- [x] **Step 2: Tag events with account + job**
 
 In `upload_and_reconcile`, immediately after `job_id = str(uuid.uuid4())`:
 ```python
@@ -272,7 +272,7 @@ In `upload_and_reconcile`, immediately after `job_id = str(uuid.uuid4())`:
     sentry_sdk.set_tag("job_id", job_id)
 ```
 
-- [ ] **Step 3: Document the env var**
+- [x] **Step 3: Document the env var**
 
 Append to `backend/.env.example`:
 ```
@@ -280,7 +280,7 @@ Append to `backend/.env.example`:
 SENTRY_DSN=
 ```
 
-- [ ] **Step 4: Verify + commit**
+- [x] **Step 4: Verify + commit**
 
 Run: `python -m pytest -q && python -m app.eval` → pass (Sentry disabled without DSN, zero behavior change).
 Optional live check (needs a real DSN): `SENTRY_DSN=<dsn>` + boot + hit an endpoint that raises → event appears in Sentry with the tags.

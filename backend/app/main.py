@@ -227,6 +227,12 @@ async def upload_and_reconcile(
 
     job_id = str(uuid.uuid4())
 
+    # Tag Sentry events so a production exception carries the context needed
+    # to find the job. No-ops harmlessly when Sentry isn't initialized.
+    import sentry_sdk
+    sentry_sdk.set_tag("account_id", account.id)
+    sentry_sdk.set_tag("job_id", job_id)
+
     base_payload = {
         "job_id": job_id,
         "account_id": account.id,
