@@ -29,7 +29,7 @@ Goal: nothing a user or a crash can do corrupts data; LLM spend is bounded; CI g
 - Create: `backend/tests/test_matching.py`
 - Create: `backend/tests/test_amounts.py`
 
-- [ ] **Step 1: Add dev requirements and pytest config**
+- [x] **Step 1: Add dev requirements and pytest config**
 
 `backend/requirements-dev.txt`:
 ```
@@ -45,7 +45,7 @@ testpaths = tests
 
 Run: `pip install -r requirements-dev.txt`
 
-- [ ] **Step 2: Write matching regression tests**
+- [x] **Step 2: Write matching regression tests**
 
 `backend/tests/test_matching.py`:
 ```python
@@ -92,7 +92,7 @@ def test_no_cross_matching_of_unrelated_keys():
     assert len(res.unmatched_b_idx) == 2
 ```
 
-- [ ] **Step 3: Write amounts regression tests**
+- [x] **Step 3: Write amounts regression tests**
 
 `backend/tests/test_amounts.py`:
 ```python
@@ -127,12 +127,12 @@ def test_major_threshold():
     assert status == "major"
 ```
 
-- [ ] **Step 4: Run tests, confirm all pass**
+- [x] **Step 4: Run tests, confirm all pass**
 
 Run: `python -m pytest -q`
 Expected: all pass (these pin existing behavior; a failure means you found a live bug — fix the test's expectation only if the current behavior is genuinely correct).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/requirements-dev.txt backend/pytest.ini backend/tests/
