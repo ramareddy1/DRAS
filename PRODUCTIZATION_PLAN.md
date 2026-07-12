@@ -307,7 +307,7 @@ git commit -m "fix: atomic writes + per-account locks for all JSON stores"
 **Files:**
 - Create: `.github/workflows/ci.yml`
 
-- [ ] **Step 1: Write the workflow**
+- [x] **Step 1: Write the workflow**
 
 `.github/workflows/ci.yml`:
 ```yaml
@@ -353,7 +353,7 @@ jobs:
       - run: npm run build
 ```
 
-- [ ] **Step 2: Commit, push, verify green**
+- [x] **Step 2: Commit, push, verify green**
 
 ```bash
 git add .github/workflows/ci.yml
