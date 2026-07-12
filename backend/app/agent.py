@@ -50,9 +50,12 @@ from .tools.timing import coerce_date, timing_stats
 BINDING_WARNING_THRESHOLD = 0.5
 
 
-def _first_key_value(row: Dict[str, Any]) -> Any:
-    """Best-effort key extraction from an unmatched row dict — used to decide
-    whether an expected_unmatched rule applies."""
+def _first_key_value(row: Dict[str, Any], key_col: Optional[str] = None) -> Any:
+    """Key extraction from an unmatched row dict — used to decide whether an
+    expected_unmatched rule applies. `key_col` (the resolved key binding)
+    wins; the name guess list is only a legacy fallback."""
+    if key_col and row.get(key_col) is not None:
+        return row[key_col]
     for k in ("order_id", "transaction_id", "sku", "name", "id",
               "invoice_number", "po_number"):
         if k in row and row[k] is not None:
@@ -85,6 +88,10 @@ class AgentOutput:
     expected_unmatched_a: int = 0
     expected_unmatched_b: int = 0
     binding_warning: Optional[Dict[str, Any]] = None
+    # Resolved key-binding columns — persisted so later reads (compare view)
+    # can anchor unmatched-row signatures the same way this job did.
+    key_col_a: Optional[str] = None
+    key_col_b: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
@@ -355,13 +362,13 @@ def run_job(
     expected_unmatched_a = 0
     expected_unmatched_b = 0
     for row in unmatched_a_rows:
-        key = _first_key_value(row)
+        key = _first_key_value(row, key_col=key_a.column_name)
         rule = rules_store.is_expected_unmatched(account_rules, "a", str(key))
         if rule is not None:
             row["_expected_by_rule"] = {"rule_id": rule.id, "description": rule.description}
             expected_unmatched_a += 1
     for row in unmatched_b_rows:
-        key = _first_key_value(row)
+        key = _first_key_value(row, key_col=key_b.column_name)
         rule = rules_store.is_expected_unmatched(account_rules, "b", str(key))
         if rule is not None:
             row["_expected_by_rule"] = {"rule_id": rule.id, "description": rule.description}
@@ -420,6 +427,8 @@ def run_job(
         rationales=matched_rows,
         unmatched_a=unmatched_a_for_triage,
         unmatched_b=unmatched_b_for_triage,
+        key_col_a=key_a.column_name,
+        key_col_b=key_b.column_name,
     )
 
     # --- Step 10: compute + snapshot insight-density metrics -----------------
@@ -447,6 +456,8 @@ def run_job(
         insights=insights,
         insights_status=insights_status,
         binding_warning=binding_warning,
+        key_col_a=key_a.column_name,
+        key_col_b=key_b.column_name,
         llm_calls=llm_calls_made,
         triage_emitted=emitted,
         metrics=job_metrics,

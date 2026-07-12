@@ -236,6 +236,8 @@ async def upload_and_reconcile(
         "expected_unmatched_a": result.expected_unmatched_a,
         "expected_unmatched_b": result.expected_unmatched_b,
         "binding_warning": result.binding_warning,
+        "key_col_a": result.key_col_a,
+        "key_col_b": result.key_col_b,
     }
     storage.save_job(job_id, _clean(payload))
     return {"job_id": job_id, "status": "complete"}
@@ -617,12 +619,13 @@ def compare_jobs(job_id: str, prev_job_id: str, account: Account = Depends(requi
                 continue
             out[sig] = {"row_key": row.get("key"), "status": rat.get("status"),
                         "diff_abs": row.get("diff_abs")}
+        key_cols = {"a": job.get("key_col_a"), "b": job.get("key_col_b")}
         for side, key in (("a", "unmatched_a"), ("b", "unmatched_b")):
             for row in job.get(key, []):
                 if "_expected_by_rule" in row:
                     continue
-                sig = triage_store.signature_for_unmatched(side, row)
-                out[sig] = {"row_key": str(triage_store._first_key_value(row)),
+                sig = triage_store.signature_for_unmatched(side, row, key_col=key_cols[side])
+                out[sig] = {"row_key": str(triage_store._first_key_value(row, key_col=key_cols[side])),
                             "status": f"unmatched_{side}"}
         return out
 

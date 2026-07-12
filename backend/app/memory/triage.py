@@ -89,13 +89,21 @@ def signature_for_matched(rationale: Rationale, row_ctx: Dict[str, Any]) -> str:
     return _hash(parts)
 
 
-def signature_for_unmatched(side: str, row_ctx: Dict[str, Any]) -> str:
-    """side ∈ {'a', 'b'}. row_ctx must include the original key column or row dict."""
-    # Best-effort key extraction — unmatched rows are raw dicts
-    candidate_keys = [
-        row_ctx.get(k) for k in ("key", "order_id", "transaction_id", "sku", "name", "id")
-    ]
-    key = next((str(k) for k in candidate_keys if k), "")
+def signature_for_unmatched(side: str, row_ctx: Dict[str, Any], key_col: Optional[str] = None) -> str:
+    """side ∈ {'a', 'b'}. row_ctx is the raw unmatched row dict.
+
+    `key_col` is the resolved key-binding column for that side — when given,
+    the signature anchors to it regardless of the file's other column names
+    or dict ordering. Without it we fall back to the legacy guess list.
+    """
+    key = ""
+    if key_col and row_ctx.get(key_col) is not None:
+        key = str(row_ctx[key_col])
+    else:
+        candidate_keys = [
+            row_ctx.get(k) for k in ("key", "order_id", "transaction_id", "sku", "name", "id")
+        ]
+        key = next((str(k) for k in candidate_keys if k), "")
     parts = (
         f"unmatched_{side}",
         "",
@@ -183,11 +191,15 @@ def emit_for_job(
     unmatched_a: List[Dict[str, Any]],
     unmatched_b: List[Dict[str, Any]],
     rules_suppressed_signatures: Optional[Iterable[str]] = None,
+    key_col_a: Optional[str] = None,
+    key_col_b: Optional[str] = None,
 ) -> List[TriageItem]:
     """Materialize TriageItems for everything that would land in the inbox.
 
     `rules_suppressed_signatures` is the set of signatures the rule engine
     already marked as expected — those should NOT produce inbox items.
+    `key_col_a`/`key_col_b` are the resolved key-binding columns per side —
+    they anchor unmatched-row signatures to the real key.
 
     Returns the items emitted (whether new or recurring).
     """
@@ -198,6 +210,8 @@ def emit_for_job(
             unmatched_a=unmatched_a,
             unmatched_b=unmatched_b,
             rules_suppressed_signatures=rules_suppressed_signatures,
+            key_col_a=key_col_a,
+            key_col_b=key_col_b,
         )
 
 
@@ -209,6 +223,8 @@ def _emit_for_job(
     unmatched_a: List[Dict[str, Any]],
     unmatched_b: List[Dict[str, Any]],
     rules_suppressed_signatures: Optional[Iterable[str]] = None,
+    key_col_a: Optional[str] = None,
+    key_col_b: Optional[str] = None,
 ) -> List[TriageItem]:
     items = load_all(account_id)
     suppressed = set(rules_suppressed_signatures or [])
@@ -262,23 +278,23 @@ def _emit_for_job(
         ))
 
     for row in unmatched_a:
-        sig = signature_for_unmatched("a", row)
+        sig = signature_for_unmatched("a", row, key_col=key_col_a)
         if sig in suppressed:
             continue
         emitted.append(_bump_or_create(
             sig,
-            row_key=str(_first_key_value(row)),
+            row_key=str(_first_key_value(row, key_col=key_col_a)),
             status="unmatched_a",
             side="a",
         ))
 
     for row in unmatched_b:
-        sig = signature_for_unmatched("b", row)
+        sig = signature_for_unmatched("b", row, key_col=key_col_b)
         if sig in suppressed:
             continue
         emitted.append(_bump_or_create(
             sig,
-            row_key=str(_first_key_value(row)),
+            row_key=str(_first_key_value(row, key_col=key_col_b)),
             status="unmatched_b",
             side="b",
         ))
@@ -287,7 +303,9 @@ def _emit_for_job(
     return emitted
 
 
-def _first_key_value(row: Dict[str, Any]) -> Any:
+def _first_key_value(row: Dict[str, Any], key_col: Optional[str] = None) -> Any:
+    if key_col and row.get(key_col) is not None:
+        return row[key_col]
     for k in ("order_id", "transaction_id", "sku", "name", "id",
               "invoice_number", "po_number"):
         if k in row and row[k] is not None:

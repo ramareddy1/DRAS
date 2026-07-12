@@ -1305,7 +1305,7 @@ git commit -m "fix: rules store is the single source of fee patterns; revoke now
 - Modify: `backend/app/memory/triage.py:90-104,178-266,271-280` (`emit_for_job` and `signature_for_unmatched` accept `key_col`)
 - Test: `backend/tests/test_unmatched_keys.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `backend/tests/test_unmatched_keys.py`:
 ```python
@@ -1320,17 +1320,17 @@ def test_signature_uses_explicit_key_column():
     assert with_col == signature_for_unmatched("a", row2, key_col="weird_ref_col")
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `python -m pytest tests/test_unmatched_keys.py -v` → FAIL: unexpected `key_col` kwarg.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `triage.signature_for_unmatched(side, row_ctx, key_col=None)`: when `key_col` is given and present in the row, use `str(row_ctx[key_col])` as the key; keep the existing guess-list as fallback. `_first_key_value(row, key_col=None)` same pattern (both copies — agent and triage). `emit_for_job(...)` gains `key_col_a=None, key_col_b=None` kwargs, passed to the per-side calls. In `agent.py`: pass `key_col_a=key_a.column_name, key_col_b=key_b.column_name` at the `emit_for_job` call, and use `row.get(key_a.column_name)` in the `is_expected_unmatched` loop for side A (respectively B).
 
 Also update the same-signature call in `main.py` `compare_jobs` (`sigs()` helper) to pass the job's stored binding column names: `job["bindings_a"]["bindings"]` → find the binding whose concept has role `primary_key` (reuse `_candidate_keys` logic or store `key_col_a` in the job payload at upload — simplest: add `"key_col_a": key_a.column_name, "key_col_b": key_b.column_name` to `AgentOutput` and the persisted payload, then read it in `compare_jobs`).
 
-- [ ] **Step 4: Verify + commit**
+- [x] **Step 4: Verify + commit**
 
 Run: `python -m pytest -q && python -m app.eval` → pass (sample key columns are in the guess list, so signatures shouldn't change).
 
