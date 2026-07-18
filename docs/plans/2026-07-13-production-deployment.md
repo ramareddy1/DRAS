@@ -443,7 +443,7 @@ RECONOPS_CORS_ORIGINS=
 RECONOPS_ENV=production
 ```
 
-- [ ] **Step 3: Verify the full stack locally** *(pending: Docker engine blocked by kernel-held stale socket — verify after next Windows reboot; CI builds both images meanwhile)*
+- [x] **Step 3: Verify the full stack locally** *(done 2026-07-18: health + frontend + request-ID round-trip all verified through the Caddy proxy; caught and fixed a Caddyfile placeholder bug — empty RECONOPS_DOMAIN made Caddy parse the site block as global options, fallback moved to compose)*
 
 ```bash
 cd <repo-root>

@@ -25,7 +25,8 @@ services:
       - "80:80"
       - "443:443"
     environment:
-      - RECONOPS_DOMAIN=${RECONOPS_DOMAIN:-}
+      # Empty/unset -> ":80" (plain HTTP, local runs). A real domain -> auto-HTTPS.
+      - RECONOPS_DOMAIN=${RECONOPS_DOMAIN:-:80}
     volumes:
       - caddy-data:/data
       - caddy-config:/config

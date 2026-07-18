@@ -1,6 +1,8 @@
 # RECONOPS_DOMAIN=recon.example.com -> automatic HTTPS via Let's Encrypt.
-# Unset (local) -> plain HTTP on :80.
-{$RECONOPS_DOMAIN::80} {
+# Compose defaults it to ":80" (plain HTTP) when unset — an empty value here
+# would make Caddy parse this block as global options, so the fallback must
+# live in docker-compose.prod.yml, not in this placeholder.
+{$RECONOPS_DOMAIN} {
 	encode gzip
 
 	handle /api/* {
