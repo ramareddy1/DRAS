@@ -499,7 +499,7 @@ After merge to main: `gh run watch <id> --exit-status` → success.
 - Create: `docs/DEPLOY.md`
 - Modify: `README.md` (link to it), `PRODUCTIZATION_PLAN.md` (§2.4 note pointing here)
 
-- [ ] **Step 1: Write the runbook**
+- [x] **Step 1: Write the runbook**
 
 `docs/DEPLOY.md` must contain, with exact commands (no placeholders except `<domain>`/`<server-ip>`):
 1. **Prerequisites** — Ubuntu 24.04 VPS (1 vCPU / 1GB is enough for pilot), a domain, DNS A record `<domain> -> <server-ip>`.
@@ -520,7 +520,7 @@ After merge to main: `gh run watch <id> --exit-status` → success.
    (volume name is `<dirname>_reconops-data`; verify with `docker volume ls`.)
 8. **Restore** — stop stack, untar into the volume with the mirror-image `docker run ... tar xzf`, start stack.
 
-- [ ] **Step 2: Cross-link + commit**
+- [x] **Step 2: Cross-link + commit**
 
 Add a "## Deploying" section to `README.md` pointing at `docs/DEPLOY.md`; add "Implemented — see docs/DEPLOY.md and docs/plans/2026-07-13-production-deployment.md" under §2.4 in `PRODUCTIZATION_PLAN.md`.
 

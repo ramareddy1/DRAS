@@ -115,10 +115,19 @@ See [PLAN.md](PLAN.md) for why each of those is a deliberate choice and what wou
 
 ---
 
-## Docker
+## Docker (dev)
 
 ```bash
 docker compose up --build
 ```
 
 Frontend at http://localhost:5173, backend at http://localhost:8000.
+
+---
+
+## Deploying (production)
+
+A single-VPS production stack (Caddy edge with automatic HTTPS + built
+frontend, uvicorn backend, named data volume) ships in
+`docker-compose.prod.yml`. Full runbook — bring-up, smoke tests, updates,
+backups: **[docs/DEPLOY.md](docs/DEPLOY.md)**.

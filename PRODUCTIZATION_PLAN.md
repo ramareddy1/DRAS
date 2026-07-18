@@ -1478,10 +1478,13 @@ Each item below is a **separate implementation plan** (write it with the same fo
 - **Done when:** a 100k-row file completes without an open HTTP request; a killed worker leaves a resumable/failed job, never a lost one.
 
 ### 2.4 Production deployment
-- Frontend: `npm run build` output served by nginx/Caddy (the current Docker image runs the Vite dev server); env-driven CORS origins; HTTPS.
-- Sentry (backend + frontend) and structured JSON logging with account/job IDs.
-- Scheduled retention cleanup (cron or in-process scheduler) replacing the per-upload call from Task 8.
-- **Done when:** a client can be onboarded on a URL you'd put in an email; an exception in production shows up in Sentry with a job ID.
+**Implemented** — see [docs/DEPLOY.md](docs/DEPLOY.md) (runbook) and
+[docs/plans/2026-07-13-production-deployment.md](docs/plans/2026-07-13-production-deployment.md)
+(implementation plan). Delivered: Caddy edge with auto-HTTPS + built frontend,
+env-driven CORS, JSON access logs with request IDs, env-gated Sentry with
+account/job tags, hourly retention scheduler, CI-built prod images.
+Frontend Sentry was scoped out (backend coverage satisfies the done-criterion).
+- **Done when:** a client can be onboarded on a URL you'd put in an email; an exception in production shows up in Sentry with a job ID. ✓ (pending only the local stack run-through after the next reboot)
 
 ### 2.5 Data governance packet
 - `DELETE /api/accounts/me` (full purge), configurable retention per account, and a one-page data-handling doc: data flow diagram, subprocessor list (Anthropic — API data not used for training), retention/deletion policy, plain-language DPA template, "decision support, not accounting advice" disclaimer.
