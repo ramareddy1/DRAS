@@ -179,7 +179,7 @@ def get_my_account(account: Account = Depends(require_account)):
 
 
 @app.patch("/api/accounts/me/profile", response_model=Account)
-def patch_profile(payload: dict, account: Account = Depends(require_account)):
+def patch_profile(payload: dict, account: Account = Depends(require_owner)):
     """Update per-account settings (tolerances, materiality thresholds)."""
     allowed = {k: (payload or {}).get(k) for k in
                ("time_zone", "amount_tolerance_abs", "amount_tolerance_pct",
@@ -188,6 +188,25 @@ def patch_profile(payload: dict, account: Account = Depends(require_account)):
         return accounts_memory.update_profile(account.id, allowed)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Invalid profile update: {e}")
+
+
+@app.get("/api/accounts/me/members")
+def list_members(account: Account = Depends(require_account)):
+    return {"members": members_store.members_of(account.id)}
+
+
+@app.post("/api/accounts/me/members")
+def add_member_endpoint(payload: dict, account: Account = Depends(require_owner)):
+    """Owner adds a teammate by email as analyst. The teammate signs in with
+    the same email and lands in the workspace — no invite email in the pilot."""
+    email = ((payload or {}).get("email") or "").strip()
+    from .auth.routes import _EMAIL_RE
+    if not _EMAIL_RE.match(email):
+        raise HTTPException(status_code=400, detail="Enter a valid email address.")
+    from .auth import store as auth_store
+    target = auth_store.get_or_create_user(email)
+    members_store.add_member(account.id, target["id"], target["email"], "analyst")
+    return {"ok": True, "user_id": target["id"], "role": "analyst"}
 
 
 @app.post("/api/preview")
@@ -535,7 +554,7 @@ def preview_rule(rule_id: str, account: Account = Depends(require_account)):
 
 
 @app.post("/api/rules/{rule_id}/accept")
-def accept_rule(rule_id: str, account: Account = Depends(require_account)):
+def accept_rule(rule_id: str, account: Account = Depends(require_owner)):
     r = rules_store.update_rule(account.id, rule_id, {"state": "active"})
     if r is None:
         raise HTTPException(status_code=404, detail="Rule not found")
@@ -543,7 +562,7 @@ def accept_rule(rule_id: str, account: Account = Depends(require_account)):
 
 
 @app.post("/api/rules/{rule_id}/revoke")
-def revoke_rule_endpoint(rule_id: str, account: Account = Depends(require_account)):
+def revoke_rule_endpoint(rule_id: str, account: Account = Depends(require_owner)):
     """Revoke an active rule or reject a pending one (both → state=revoked)."""
     if not rules_store.revoke_rule(account.id, rule_id):
         raise HTTPException(status_code=404, detail="Rule not found")

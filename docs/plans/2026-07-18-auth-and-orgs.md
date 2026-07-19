@@ -664,7 +664,7 @@ git commit -m "feat: membership-checked workspaces, global endpoint lockdown, le
 - Modify: `backend/app/main.py`
 - Test: `backend/tests/test_roles.py`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `backend/tests/test_roles.py` (same fixture/_login helpers):
 ```python
@@ -701,9 +701,9 @@ def test_owner_sees_member_list(client):
     assert emails == ["analyst@x.co", "owner@x.co"]
 ```
 
-- [ ] **Step 2: Run to verify it fails** → member endpoints 404; analyst gets 200 on owner surfaces.
+- [x] **Step 2: Run to verify it fails** → member endpoints 404; analyst gets 200 on owner surfaces.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 - Switch these endpoints from `Depends(require_account)` to `Depends(require_owner)`: `patch_profile`, `accept_rule`, `revoke_rule_endpoint`.
 - Member management:
@@ -727,7 +727,7 @@ def add_member_endpoint(payload: dict, account: Account = Depends(require_owner)
     return {"ok": True, "user_id": target["id"], "role": "analyst"}
 ```
 
-- [ ] **Step 4: Verify + commit**
+- [x] **Step 4: Verify + commit**
 
 Run: `python -m pytest -q` → all pass.
 ```bash
