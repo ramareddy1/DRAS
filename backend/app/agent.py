@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 import numpy as np
 import pandas as pd
@@ -158,6 +158,7 @@ def run_job(
     df_b: pd.DataFrame,
     cfg: ReconcileConfig,
     job_id: Optional[str] = None,
+    progress_cb: Optional[Callable[[int, int], None]] = None,
 ) -> AgentOutput:
     """Run one reconciliation end-to-end for an account.
 
@@ -248,7 +249,8 @@ def run_job(
     llm_calls_made = 0
     rule_applications = 0
 
-    for m in mres.matches:
+    total_matches = len(mres.matches)
+    for i, m in enumerate(mres.matches):
         row_a = a.loc[m.idx_a]
         row_b = b.loc[m.idx_b]
         a_amt = float(row_a["_amt"]) if pd.notna(row_a["_amt"]) else None
@@ -339,6 +341,8 @@ def run_job(
         if rationale.status != "match":
             discrepancy_rows.append(record)
 
+        if progress_cb is not None:
+            progress_cb(i + 1, total_matches)
     # --- Step 4b: one capped, batched, advisory AI review ---------------------
     reviewed = batch_second_opinions(
         candidates=escalation_candidates, account_id=account.id, job_id=job_id,
