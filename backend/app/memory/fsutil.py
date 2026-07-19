@@ -40,3 +40,13 @@ def account_lock(account_id: str, timeout: float = 10.0) -> FileLock:
     lock_dir = DATA_DIR / "accounts" / account_id
     lock_dir.mkdir(parents=True, exist_ok=True)
     return FileLock(str(lock_dir / ".lock"), timeout=timeout)
+
+
+def named_lock(name: str, timeout: float = 10.0) -> FileLock:
+    """Advisory lock for non-account-scoped stores (auth, global indexes).
+
+    Reads data_dir() at call time so auth tests need no module reloads."""
+    from ..config import data_dir
+    lock_dir = data_dir() / "locks"
+    lock_dir.mkdir(parents=True, exist_ok=True)
+    return FileLock(str(lock_dir / f"{name}.lock"), timeout=timeout)

@@ -37,7 +37,7 @@ Auth data layout (all under `data/`): `auth/users.json` (email → user), `auth/
 - Create: `backend/app/auth/__init__.py`, `backend/app/auth/store.py`
 - Test: `backend/tests/test_auth_store.py`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `backend/tests/test_auth_store.py`:
 ```python
@@ -100,11 +100,11 @@ def test_session_lifecycle(auth_env):
     assert store.session_user_id("garbage") is None
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `python -m pytest tests/test_auth_store.py -q` → collection error (`app.auth` doesn't exist).
 
-- [ ] **Step 3: Add `named_lock` to fsutil**
+- [x] **Step 3: Add `named_lock` to fsutil**
 
 Append to `backend/app/memory/fsutil.py`:
 ```python
@@ -116,7 +116,7 @@ def named_lock(name: str, timeout: float = 10.0) -> FileLock:
     return FileLock(str(lock_dir / f"{name}.lock"), timeout=timeout)
 ```
 
-- [ ] **Step 4: Implement the store**
+- [x] **Step 4: Implement the store**
 
 `backend/app/auth/store.py`:
 ```python
@@ -262,7 +262,7 @@ def delete_session(token: str) -> None:
 ```
 Also create empty `backend/app/auth/__init__.py`.
 
-- [ ] **Step 5: Verify + commit**
+- [x] **Step 5: Verify + commit**
 
 Run: `python -m pytest tests/test_auth_store.py -q` → all pass; `python -m pytest -q` → all pass.
 ```bash
