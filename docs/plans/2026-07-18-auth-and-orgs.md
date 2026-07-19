@@ -743,7 +743,7 @@ git commit -m "feat: owner/analyst roles — settings and rule lifecycle are own
 - Modify: `backend/app/models.py` (DecisionLogEntry + Rule), `backend/app/main.py`
 - Test: append to `backend/tests/test_roles.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 def test_decisions_carry_user_identity(client, tmp_path):
@@ -757,15 +757,15 @@ def test_decisions_carry_user_identity(client, tmp_path):
     assert entries[-1].user_id
 ```
 
-- [ ] **Step 2: Run to verify it fails** → `DecisionLogEntry` has no `user_email`.
+- [x] **Step 2: Run to verify it fails** → `DecisionLogEntry` has no `user_email`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `models.py`: `DecisionLogEntry` gains `user_id: Optional[str] = None` and `user_email: Optional[str] = None`; `Rule` gains `created_by: Optional[str] = None` (email).
 
 `main.py`: every `decision_log.append(...)` call site (`resolve_triage`, `record_decision`, `observation_feedback`) gains `user: dict = Depends(require_user)` on its endpoint (where not already present via require_account — note `require_account` doesn't expose the user, so add the explicit dependency) and passes `user_id=user["id"], user_email=user["email"]` into the entry. Rule creations in `resolve_triage` set `created_by=user["email"]`; `rule_proposer` rules keep `created_by=None` (system-proposed).
 
-- [ ] **Step 4: Verify + commit**
+- [x] **Step 4: Verify + commit**
 
 Run: `python -m pytest -q && python -m app.eval` → pass (fields default to None everywhere else).
 ```bash

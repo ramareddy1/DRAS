@@ -54,3 +54,14 @@ def test_owner_sees_member_list(client):
     r = client.get("/api/accounts/me/members", headers={"X-Account-Id": acc["id"]})
     emails = sorted(m["email"] for m in r.json()["members"].values())
     assert emails == ["analyst@x.co", "owner@x.co"]
+
+
+def test_decisions_carry_user_identity(client):
+    _login(client, "who@x.co")
+    acc = client.post("/api/accounts", json={}).json()
+    client.post("/api/decisions", json={"signature": "sig123", "user_status": "expected"},
+                headers={"X-Account-Id": acc["id"]})
+    from app.memory import decision_log
+    entries = list(decision_log.replay(acc["id"]))
+    assert entries[-1].user_email == "who@x.co"
+    assert entries[-1].user_id

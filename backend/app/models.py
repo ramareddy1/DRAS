@@ -212,6 +212,7 @@ class Rule(BaseModel):
     then: Dict[str, Any] = Field(default_factory=dict)
     origin: str = "system"             # "system" | "user_confirmed_Nx" | "imported"
     user_origin_text: Optional[str] = None  # the free-text justification (if any) that seeded this rule
+    created_by: Optional[str] = None   # email of the user who taught this rule (None = system)
     confidence: float = 1.0
     state: RuleState = "pending"
     created_at: datetime = Field(default_factory=datetime.utcnow)
@@ -274,6 +275,9 @@ class DecisionLogEntry(BaseModel):
     original_status: Optional[str] = None
     user_status: Optional[str] = None    # "expected" | "investigate" | force a status | etc.
     user_reason: Optional[str] = None    # the free-text justification
+    # Who made this decision (Phase 2.1 auth) — None on pre-auth entries
+    user_id: Optional[str] = None
+    user_email: Optional[str] = None
 
 
 class AccountMetrics(BaseModel):

@@ -457,7 +457,9 @@ def inbox(job_id: str = "", account: Account = Depends(require_account)):
 
 
 @app.post("/api/triage/{item_id}/resolve")
-def resolve_triage(item_id: str, payload: dict, account: Account = Depends(require_account)):
+def resolve_triage(item_id: str, payload: dict,
+                   account: Account = Depends(require_account),
+                   user: dict = Depends(require_user)):
     """Resolve a triage item. action ∈ {mark_expected, investigate, add_rule}.
 
     - mark_expected: stops the signature re-surfacing in future inboxes.
@@ -490,6 +492,7 @@ def resolve_triage(item_id: str, payload: dict, account: Account = Depends(requi
                   "max_abs_diff": round(max(3 * abs(item.diff_abs or 0.0), 50.0), 2)},
             then={"status": forced_status},
             origin="user_rule", user_origin_text=user_reason,
+            created_by=user["email"],
             confidence=0.9, state="active",
         )
         rules_store.add_rule(account.id, rule)
@@ -505,6 +508,7 @@ def resolve_triage(item_id: str, payload: dict, account: Account = Depends(requi
         original_status=item.status,
         user_status=("expected" if action in ("mark_expected", "add_rule") else "investigate"),
         user_reason=user_reason,
+        user_id=user["id"], user_email=user["email"],
     ))
     proposed = rule_proposer.propose_from_decisions(account.id)
     return _clean({
@@ -570,7 +574,9 @@ def revoke_rule_endpoint(rule_id: str, account: Account = Depends(require_owner)
 
 
 @app.post("/api/decisions")
-def record_decision(payload: dict, account: Account = Depends(require_account)):
+def record_decision(payload: dict,
+                    account: Account = Depends(require_account),
+                    user: dict = Depends(require_user)):
     """Drawer-driven decision capture. The user marks a matched row expected or
     overrides its status with a free-text reason. We recompute the row's
     signature from the job so this lands on the same signature the inbox uses."""
@@ -598,6 +604,7 @@ def record_decision(payload: dict, account: Account = Depends(require_account)):
     decision_log.append(account.id, DecisionLogEntry(
         job_id=job_id, row_key=row_key, signature=signature,
         original_status=original_status, user_status=user_status, user_reason=user_reason,
+        user_id=user["id"], user_email=user["email"],
     ))
 
     resolved = None
@@ -675,10 +682,13 @@ def list_observations(account: Account = Depends(require_account)):
 
 
 @app.post("/api/observations/feedback")
-def observation_feedback(payload: dict, account: Account = Depends(require_account)):
+def observation_feedback(payload: dict,
+                         account: Account = Depends(require_account),
+                         user: dict = Depends(require_user)):
     decision_log.append(account.id, DecisionLogEntry(
         user_status="observation_wrong",
         user_reason=(payload or {}).get("text"),
+        user_id=user["id"], user_email=user["email"],
     ))
     return {"ok": True}
 
