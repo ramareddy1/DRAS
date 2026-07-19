@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, NavLink, Outlet } from "react-router-dom";
-import { ensureAccount, resetAccount } from "../account.js";
-import { getMetricsSeries } from "../api/client.js";
+import { ensureAccount } from "../account.js";
+import { getMe, getMetricsSeries, logout } from "../api/client.js";
 
 function Sparkline({ points, color = "#48bb78" }) {
   // points: array of 0..1 values
@@ -98,8 +98,11 @@ export default function Layout() {
       isActive ? "bg-white/15 text-white" : "text-blue-100 hover:bg-white/10"
     }`;
 
-  const [accountId, setAccountId] = useState(null);
-  useEffect(() => { ensureAccount().then(setAccountId).catch(() => {}); }, []);
+  const [me, setMe] = useState(null);
+  useEffect(() => {
+    ensureAccount().catch(() => {});
+    getMe().then(setMe).catch(() => {});
+  }, []);
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -119,14 +122,16 @@ export default function Layout() {
             <NavLink to="/observations" className={linkCls}>Observations</NavLink>
             <NavLink to="/metrics" className={linkCls}>Metrics</NavLink>
             <NavLink to="/history" className={linkCls}>History</NavLink>
-            {accountId && (
-              <button
-                onClick={resetAccount}
-                title={`Account ${accountId}\nClick to reset (creates a new account)`}
-                className="ml-3 text-[10px] text-blue-200 hover:text-white border border-blue-400/40 rounded px-2 py-1 font-mono"
-              >
-                {accountId.slice(0, 8)}…
-              </button>
+            {me && (
+              <span className="ml-3 flex items-center gap-2">
+                <span className="text-[11px] text-blue-200 hidden sm:inline">{me.user.email}</span>
+                <button
+                  onClick={async () => { try { await logout(); } finally { window.location.reload(); } }}
+                  className="text-[10px] text-blue-200 hover:text-white border border-blue-400/40 rounded px-2 py-1"
+                >
+                  Sign out
+                </button>
+              </span>
             )}
           </nav>
         </div>

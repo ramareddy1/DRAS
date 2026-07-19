@@ -906,7 +906,7 @@ git commit -m "feat: HMAC-signed 5-minute export tokens replace account_id query
 - Rewrite: `frontend/src/account.js`
 - Modify: `frontend/src/api/client.js`, `frontend/src/main.jsx`, `frontend/src/components/Layout.jsx`, `frontend/src/pages/ResultsPage.jsx`
 
-- [ ] **Step 1: client.js — auth calls + 401 broadcast + export token**
+- [x] **Step 1: client.js — auth calls + 401 broadcast + export token**
 
 Add:
 ```javascript
@@ -950,11 +950,11 @@ async function handle(res) {
 ```
 Delete `exportUrl` (replaced by the token flow in ResultsPage).
 
-- [ ] **Step 2: account.js — cookie era**
+- [x] **Step 2: account.js — cookie era**
 
 Rewrite: drop `?account=`/`?reset` adoption and the unauthenticated auto-create. `ensureAccount()` now: `getMe()` → if the stored `reconops_account_id` is among memberships, use it; else if memberships exist, use the first (and store it); else if a stored legacy id exists, try `claimAccount(storedId)` (on 409/404, clear it); else `POST /api/accounts` and store the new id. `accountFetch` keeps adding `X-Account-Id`. Keep `currentAccountId()`; `resetAccount()` becomes `logout()+reload`.
 
-- [ ] **Step 3: auth.jsx — AuthGate + LoginPage**
+- [x] **Step 3: auth.jsx — AuthGate + LoginPage**
 
 ```jsx
 import { useEffect, useState } from "react";
@@ -1024,7 +1024,7 @@ function LoginPage({ onSignedIn }) {
 ```
 Wrap the app in `main.jsx`: `<AuthGate><App/></AuthGate>` (inside providers, outside routes). Add the signed-in email + a "Sign out" button to `Layout.jsx` header (calls `logout()` then `window.location.reload()`).
 
-- [ ] **Step 4: ResultsPage export via token**
+- [x] **Step 4: ResultsPage export via token**
 
 Replace the `<a href={exportUrl(...)}>` with a button:
 ```jsx
@@ -1034,11 +1034,11 @@ onClick={async () => {
 }}
 ```
 
-- [ ] **Step 5: Verify**
+- [x] **Step 5: Verify**
 
 `npm run build` → clean. Manual dev-mode walkthrough: backend with `RECONOPS_AUTH_DEV=1` + stub LLM, frontend dev server; sign in with the on-screen dev code, auto-create workspace, upload the bundled samples end-to-end, download the export (token flow), sign out → gate returns. Confirm `?account=<uuid>` no longer adopts.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add frontend/src/

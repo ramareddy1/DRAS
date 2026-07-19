@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
-import { getResults, exportUrl } from "../api/client.js";
-import { currentAccountId } from "../account.js";
+import { getExportToken, getResults } from "../api/client.js";
 import DataTable from "../components/DataTable.jsx";
 import { saveHistoryItem, loadHistory } from "../history.js";
 
@@ -130,12 +129,16 @@ export default function ResultsPage() {
               What changed
             </Link>
           )}
-          <a
-            href={exportUrl(data.job_id, currentAccountId())}
+          <button
+            onClick={async () => {
+              const { token } = await getExportToken(data.job_id);
+              window.location.href =
+                `/api/results/${data.job_id}/export?token=${encodeURIComponent(token)}`;
+            }}
             className="bg-navy text-white px-4 py-2 rounded text-sm font-medium hover:bg-brand"
           >
             Download Excel report
-          </a>
+          </button>
         </div>
       </div>
 

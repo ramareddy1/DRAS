@@ -3,12 +3,43 @@ import { accountFetch } from "../account.js";
 const BASE = import.meta.env.VITE_API_BASE || "";
 
 async function handle(res) {
+  if (res.status === 401) {
+    // Session gone — tell the AuthGate to show the login screen.
+    window.dispatchEvent(new Event("reconops:unauthenticated"));
+  }
   if (!res.ok) {
     let detail = res.statusText;
     try { detail = (await res.json()).detail || detail; } catch {}
     throw new Error(detail);
   }
   return res.json();
+}
+
+// --- Auth ------------------------------------------------------------------
+
+export async function requestCode(email) {
+  return handle(await fetch(`${BASE}/api/auth/request-code`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email }),
+  }));
+}
+export async function verifyCode(email, code) {
+  return handle(await fetch(`${BASE}/api/auth/verify`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, code }),
+  }));
+}
+export async function getMe() {
+  return handle(await fetch(`${BASE}/api/auth/me`));
+}
+export async function logout() {
+  return handle(await fetch(`${BASE}/api/auth/logout`, { method: "POST" }));
+}
+export async function claimAccount(accountId) {
+  return handle(await fetch(`${BASE}/api/accounts/claim`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ account_id: accountId }),
+  }));
 }
 
 export async function previewFile(file) {
@@ -41,13 +72,9 @@ export async function getJobs() {
   return handle(await accountFetch(`${BASE}/api/jobs`));
 }
 
-/**
- * Export URL needs the account ID; since <a href> can't carry headers, we
- * include the account ID as a query param. (Pilot only; we'll switch to a
- * signed short-lived token at production.)
- */
-export function exportUrl(id, accountId) {
-  return `${BASE}/api/results/${id}/export?account_id=${encodeURIComponent(accountId || "")}`;
+/** Mint a short-lived signed download token for a job (5-minute expiry). */
+export async function getExportToken(jobId) {
+  return post(`/api/results/${jobId}/export-token`);
 }
 
 // --- Phase 5: HITL endpoints ----------------------------------------------

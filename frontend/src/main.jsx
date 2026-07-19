@@ -20,10 +20,12 @@ import ObservationsPage from "./pages/ObservationsPage.jsx";
 import ComparePage from "./pages/ComparePage.jsx";
 import MetricsPage from "./pages/MetricsPage.jsx";
 import Layout from "./components/Layout.jsx";
+import { AuthGate } from "./auth.jsx";
 
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
     <BrowserRouter>
+      <AuthGate>
       <ScrollToTop />
       <Routes>
         <Route element={<Layout />}>
@@ -40,6 +42,7 @@ ReactDOM.createRoot(document.getElementById("root")).render(
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>
+      </AuthGate>
     </BrowserRouter>
   </React.StrictMode>
 );
