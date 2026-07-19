@@ -1464,10 +1464,15 @@ git commit -m "feat: ontology aliases for Olist and Stripe export headers"
 Each item below is a **separate implementation plan** (write it with the same format as this document when picked up). Listed here with scope and acceptance criteria so nothing gets lost.
 
 ### 2.1 Authentication & organizations
-- Email magic-link auth (Stytch, Supabase Auth, or self-rolled OTP over SMTP), replacing the localStorage UUID. Migration path: an authenticated user can claim an existing account UUID once.
-- Organization → members model with two roles (owner, analyst); `DecisionLogEntry` gains `user_id` so "who approved this rule" is answerable.
-- Kill the `?account=<uuid>` adoption and the `account_id` query param on export (replace with a short-lived signed download token).
-- **Done when:** no endpoint is reachable without a session; export links expire; decision log rows carry user identity.
+**Implemented** — see [docs/plans/2026-07-18-auth-and-orgs.md](docs/plans/2026-07-18-auth-and-orgs.md)
+(implementation plan) and the auth section of [docs/DEPLOY.md](docs/DEPLOY.md).
+Delivered: self-rolled email-OTP sign-in (codes and session tokens sha256-hashed
+at rest, rate-limited, single-use) with httpOnly cookie sessions; Org=Account
+membership with owner/analyst roles; global endpoint lockdown via the rewritten
+`require_account` dependency; one-time legacy-UUID claim migration; decision-log
+user attribution + `Rule.created_by`; HMAC-signed 5-minute export tokens; login
+gate UI with dev-mode codes for local work.
+- **Done when:** no endpoint is reachable without a session; export links expire; decision log rows carry user identity. ✓ (all three test-enforced; E2E verified against a live server)
 
 ### 2.2 Postgres + object storage
 - SQLAlchemy models mirroring the existing Pydantic schemas (accounts, jobs, rules, triage items, decisions, metrics); Alembic migrations; a one-shot importer for existing JSON data. Uploaded files to S3-compatible storage with server-side encryption.
