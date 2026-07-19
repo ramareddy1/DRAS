@@ -480,7 +480,7 @@ git commit -m "feat: email-OTP auth endpoints with httpOnly cookie sessions"
 - Modify: `backend/app/main.py` (`require_account` rewrite, account create/claim, lock down `/api/preview`, `/api/bind`, `/api/concepts`)
 - Test: `backend/tests/test_membership.py`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `backend/tests/test_membership.py` (reuses the fixture/_login pattern from `test_auth_endpoints.py` — copy both helpers in):
 ```python
@@ -530,9 +530,9 @@ def test_legacy_account_claim_once(client, tmp_path, monkeypatch):
                        json={"account_id": legacy.id}).status_code == 409
 ```
 
-- [ ] **Step 2: Run to verify it fails** → old `require_account` accepts the bare header; endpoints return 200/401 in the wrong places.
+- [x] **Step 2: Run to verify it fails** → old `require_account` accepts the bare header; endpoints return 200/401 in the wrong places.
 
-- [ ] **Step 3: Implement members.py**
+- [x] **Step 3: Implement members.py**
 
 ```python
 """Account membership: per-account members.json + global reverse index.
@@ -597,7 +597,7 @@ def accounts_for_user(user_id: str) -> List[dict]:
     return out
 ```
 
-- [ ] **Step 4: Rewrite the dependencies + endpoints in main.py**
+- [x] **Step 4: Rewrite the dependencies + endpoints in main.py**
 
 Replace `require_account` (and add `require_owner`):
 ```python
@@ -648,7 +648,7 @@ def claim_account(payload: dict, user: dict = Depends(require_user)):
 - Lock down the strays: add `user: dict = Depends(require_user)` to `preview_file`, `bind_file`, and `concepts`. In `preview_file`/`bind_file` the opportunistic learned-alias lookup keeps using the header as before (membership isn't required just to preview, but a session is).
 - The export GET keeps its query-param auth **until Task 6 replaces it entirely** — leave it as is here.
 
-- [ ] **Step 5: Verify + commit**
+- [x] **Step 5: Verify + commit**
 
 Run: `python -m pytest -q && python -m app.eval` → all pass (eval calls `run_job` directly — untouched by HTTP auth).
 ```bash

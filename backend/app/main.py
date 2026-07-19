@@ -42,7 +42,8 @@ load_dotenv()
 
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
 
-from .auth.routes import router as auth_router
+from .auth import members as members_store
+from .auth.routes import require_user, router as auth_router
 from .obs import RequestLogMiddleware, setup_logging, setup_sentry
 
 _retention_logger = logging.getLogger("reconops.retention")
@@ -93,24 +94,29 @@ app.add_middleware(
 )
 
 
-def require_account(x_account_id: str = Header(default="")) -> Account:
-    """FastAPI dependency: load the account named by the X-Account-Id header.
-
-    Returns 401 when the header is missing or names an account that doesn't
-    exist. Pilot has no auth — the UUID is the access token.
-    """
+def require_account(
+    x_account_id: str = Header(default=""),
+    user: dict = Depends(require_user),
+) -> Account:
+    """Membership-checked account resolution. The UUID header is now just a
+    workspace selector — the session cookie is the credential."""
     if not x_account_id:
-        raise HTTPException(
-            status_code=401,
-            detail="Account not initialized. Create one at POST /api/accounts.",
-        )
+        raise HTTPException(status_code=400, detail="X-Account-Id header required.")
+    if members_store.role_of(x_account_id, user["id"]) is None:
+        raise HTTPException(status_code=403, detail="No access to this workspace.")
     acc = accounts_memory.load_account(x_account_id)
     if acc is None:
-        raise HTTPException(
-            status_code=401,
-            detail=f"Unknown account id '{x_account_id}'.",
-        )
+        raise HTTPException(status_code=404, detail="Workspace not found.")
     return acc
+
+
+def require_owner(
+    account: Account = Depends(require_account),
+    user: dict = Depends(require_user),
+) -> Account:
+    if members_store.role_of(account.id, user["id"]) != "owner":
+        raise HTTPException(status_code=403, detail="Owner role required.")
+    return account
 
 
 def _clean(obj):
@@ -132,7 +138,7 @@ def health():
 
 
 @app.get("/api/concepts")
-def concepts():
+def concepts(user: dict = Depends(require_user)):
     """Return the concept graph for the UI dropdown."""
     from .ontology import CONCEPTS
     return [
@@ -144,17 +150,27 @@ def concepts():
 # --- Accounts (v3) ---------------------------------------------------------
 
 @app.post("/api/accounts", response_model=Account)
-def create_account(payload: Optional[dict] = None):
-    """Create a new account. No auth — the returned UUID is the access token.
-
-    Pilot: the frontend calls this once on first visit and stores the ID in
-    localStorage. We also seed the default fee-pattern rules so brands get
-    Stripe / PayPal handling out of the box.
-    """
+def create_account(payload: Optional[dict] = None, user: dict = Depends(require_user)):
+    """Create a workspace; the creator becomes its owner. Default fee-pattern
+    rules are seeded so brands get Stripe / PayPal handling out of the box."""
     display_name = (payload or {}).get("display_name") if payload else None
     acc = accounts_memory.create_account(display_name=display_name)
     rules_store.seed_defaults(acc.id)
+    members_store.add_member(acc.id, user["id"], user["email"], "owner")
     return acc
+
+
+@app.post("/api/accounts/claim")
+def claim_account(payload: dict, user: dict = Depends(require_user)):
+    """One-time migration path: a pre-auth account (no members) is claimed by
+    whoever presents its UUID — the old bearer secret — while signed in."""
+    account_id = (payload or {}).get("account_id", "")
+    if accounts_memory.load_account(account_id) is None:
+        raise HTTPException(status_code=404, detail="Account not found.")
+    if members_store.has_members(account_id):
+        raise HTTPException(status_code=409, detail="Workspace already claimed.")
+    members_store.add_member(account_id, user["id"], user["email"], "owner")
+    return {"ok": True, "account_id": account_id, "role": "owner"}
 
 
 @app.get("/api/accounts/me", response_model=Account)
@@ -178,6 +194,7 @@ def patch_profile(payload: dict, account: Account = Depends(require_account)):
 async def preview_file(
     file: UploadFile = File(...),
     x_account_id: str = Header(default=""),
+    user: dict = Depends(require_user),
 ):
     data = await file.read()
     if len(data) > MAX_FILE_SIZE:
@@ -200,6 +217,7 @@ async def preview_file(
 async def bind_file(
     file: UploadFile = File(...),
     x_account_id: str = Header(default=""),
+    user: dict = Depends(require_user),
 ):
     """Infer SemanticBindings for an uploaded file without taking a full preview."""
     data = await file.read()
