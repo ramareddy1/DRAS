@@ -39,6 +39,19 @@ def load_job(job_id: str) -> Optional[Dict[str, Any]]:
     return json.loads(p.read_text(encoding="utf-8"))
 
 
+def update_job(job_id: str, **fields: Any) -> None:
+    """Merge fields into an existing job's JSON, preserving the rest.
+
+    Raises FileNotFoundError if the job doesn't exist — callers only ever
+    update a job they just created with save_job().
+    """
+    job = load_job(job_id)
+    if job is None:
+        raise FileNotFoundError(f"job {job_id} not found")
+    job.update(fields)
+    save_job(job_id, job)
+
+
 def list_jobs(account_id: str, limit: int = 50) -> list:
     """Lightweight job listing for one account, newest first.
 

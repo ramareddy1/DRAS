@@ -1,3 +1,6 @@
+import pytest
+
+
 def test_list_jobs_filters_by_account_and_sorts(tmp_path, monkeypatch):
     monkeypatch.setenv("RECONOPS_DATA_DIR", str(tmp_path))
     import importlib
@@ -30,3 +33,28 @@ def test_list_jobs_tolerates_corrupt_files(tmp_path, monkeypatch):
 
     jobs = storage.list_jobs("A")
     assert [j["job_id"] for j in jobs] == ["ok"]
+
+
+def test_update_job_merges_fields(tmp_path, monkeypatch):
+    monkeypatch.setenv("RECONOPS_DATA_DIR", str(tmp_path))
+    import importlib
+    from app import storage
+    importlib.reload(storage)
+
+    storage.save_job("j1", {"job_id": "j1", "account_id": "A", "status": "processing"})
+    storage.update_job("j1", status="complete", summary={"matched_pct": 100.0})
+
+    job = storage.load_job("j1")
+    assert job["status"] == "complete"
+    assert job["summary"] == {"matched_pct": 100.0}
+    assert job["account_id"] == "A"   # untouched fields survive
+
+
+def test_update_job_missing_job_raises(tmp_path, monkeypatch):
+    monkeypatch.setenv("RECONOPS_DATA_DIR", str(tmp_path))
+    import importlib
+    from app import storage
+    importlib.reload(storage)
+
+    with pytest.raises(FileNotFoundError):
+        storage.update_job("nope", status="error")
