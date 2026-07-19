@@ -12,7 +12,7 @@ from datetime import datetime
 from typing import Optional
 
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
+from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 
@@ -257,6 +257,7 @@ async def bind_file(
 
 @app.post("/api/upload")
 async def upload_and_reconcile(
+    background_tasks: BackgroundTasks,
     file_a: UploadFile = File(...),
     file_b: UploadFile = File(...),
     config: str = Form(...),
@@ -287,26 +288,41 @@ async def upload_and_reconcile(
     sentry_sdk.set_tag("account_id", account.id)
     sentry_sdk.set_tag("job_id", job_id)
 
-    base_payload = {
+    initial_payload = {
         "job_id": job_id,
         "account_id": account.id,
         "created_at": datetime.utcnow().isoformat() + "Z",
         "schema_version": 3,
+        "status": "processing",
+        "progress": None,
         "config": cfg.model_dump(),
         "filenames": {"a": file_a.filename, "b": file_b.filename},
         "bindings_a": cfg.source_a.model_dump(),
         "bindings_b": cfg.source_b.model_dump(),
     }
+    storage.save_job(job_id, _clean(initial_payload))
 
+    background_tasks.add_task(_run_job_background, job_id, account, df_a, df_b, cfg)
+    return {"job_id": job_id, "status": "processing"}
+
+
+def _run_job_background(job_id: str, account: Account, df_a, df_b, cfg: ReconcileConfig) -> None:
+    """Runs one reconciliation to completion and persists the outcome.
+
+    Executes after the HTTP response has already been sent (FastAPI
+    BackgroundTasks) — nothing here can affect the response the client saw,
+    so failures are persisted onto the job instead of raised as HTTP errors.
+    """
     try:
         result = run_job(account=account, df_a=df_a, df_b=df_b, cfg=cfg, job_id=job_id)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Reconciliation failed: {e}")
+        import sentry_sdk
+        sentry_sdk.set_tag("job_id", job_id)
+        sentry_sdk.capture_exception(e)
+        storage.update_job(job_id, status="error", error=str(e))
+        return
 
-    payload = {
-        **base_payload,
+    fields = _clean({
         "status": "complete",
         "summary": result.summary.model_dump(),
         "matched": result.matched,
@@ -325,9 +341,8 @@ async def upload_and_reconcile(
         "binding_warning": result.binding_warning,
         "key_col_a": result.key_col_a,
         "key_col_b": result.key_col_b,
-    }
-    storage.save_job(job_id, _clean(payload))
-    return {"job_id": job_id, "status": "complete"}
+    })
+    storage.update_job(job_id, **fields)
 
 
 def _backfill_rationale(rows):
