@@ -279,7 +279,7 @@ git commit -m "feat: auth store — users, hashed login codes, hashed sessions"
 - Modify: `backend/app/main.py` (include router)
 - Test: `backend/tests/test_auth_endpoints.py`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `backend/tests/test_auth_endpoints.py`:
 ```python
@@ -341,9 +341,9 @@ def test_rate_limit_429(client):
     assert client.post("/api/auth/request-code", json={"email": "r@x.co"}).status_code == 429
 ```
 
-- [ ] **Step 2: Run to verify it fails** → 404s (routes don't exist).
+- [x] **Step 2: Run to verify it fails** → 404s (routes don't exist).
 
-- [ ] **Step 3: Implement emailer + routes**
+- [x] **Step 3: Implement emailer + routes**
 
 `backend/app/auth/emailer.py`:
 ```python
@@ -463,7 +463,7 @@ Task 3 replaces it.)
 
 In `main.py`, after the app is created: `from .auth.routes import router as auth_router` and `app.include_router(auth_router)`.
 
-- [ ] **Step 4: Verify + commit**
+- [x] **Step 4: Verify + commit**
 
 Run: `python -m pytest -q` → all pass (TestClient carries cookies across requests).
 ```bash

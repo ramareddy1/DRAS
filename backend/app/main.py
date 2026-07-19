@@ -42,6 +42,7 @@ load_dotenv()
 
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
 
+from .auth.routes import router as auth_router
 from .obs import RequestLogMiddleware, setup_logging, setup_sentry
 
 _retention_logger = logging.getLogger("reconops.retention")
@@ -67,6 +68,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="ReconOps AI", version="0.1.0", lifespan=lifespan)
+app.include_router(auth_router)
 
 setup_logging()
 setup_sentry()
