@@ -11,6 +11,12 @@ services:
       - SENTRY_DSN=${SENTRY_DSN:-}
       - RECONOPS_ENV=${RECONOPS_ENV:-production}
       - RECONOPS_CORS_ORIGINS=${RECONOPS_CORS_ORIGINS:-}
+      - SMTP_HOST=${SMTP_HOST:-}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USER=${SMTP_USER:-}
+      - SMTP_PASS=${SMTP_PASS:-}
+      - SMTP_FROM=${SMTP_FROM:-}
+      - RECONOPS_SECRET=${RECONOPS_SECRET:-}
     volumes:
       - reconops-data:/app/data
 

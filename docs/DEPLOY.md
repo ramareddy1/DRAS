@@ -47,6 +47,22 @@ sudo docker compose -f docker-compose.prod.yml up --build -d
 First start takes a few minutes (image builds + certificate issuance).
 `.env` is gitignored — it never leaves the server.
 
+## 3b. Auth setup
+
+Sign-in works by emailing a 6-digit code, so production needs SMTP
+credentials in `.env` (`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`,
+`SMTP_FROM`). Any transactional provider works — the free tiers of Resend
+or Postmark are plenty for a pilot. Without SMTP, `/api/auth/request-code`
+returns 503 and nobody can sign in. Never set `RECONOPS_AUTH_DEV` in
+production — it prints sign-in codes in API responses.
+
+**Migrating pre-auth pilot users:** they just sign in with their email in
+the same browser they used before — the app claims their old workspace from
+the browser's stored UUID automatically (one-time, first claimant wins).
+
+The `data/auth/` directory (users, hashed sessions, HMAC secret) lives on
+the same volume as everything else, so the nightly backup already covers it.
+
 ## 4. Smoke test
 
 ```bash

@@ -1052,7 +1052,7 @@ git commit -m "feat: login gate, cookie sessions, workspace claim, tokenized exp
 **Files:**
 - Modify: `backend/.env.example`, `deploy/env.example`, `docker-compose.prod.yml`, `docs/DEPLOY.md`
 
-- [ ] **Step 1: Env plumbing**
+- [x] **Step 1: Env plumbing**
 
 `backend/.env.example` and `deploy/env.example` gain:
 ```
@@ -1079,11 +1079,11 @@ RECONOPS_SECRET=
       - RECONOPS_SECRET=${RECONOPS_SECRET:-}
 ```
 
-- [ ] **Step 2: DEPLOY.md**
+- [x] **Step 2: DEPLOY.md**
 
 Add an "## Auth setup" section after Bring-up: SMTP env vars are required for sign-in emails (any transactional SMTP provider works; the free tiers of Resend/Postmark suffice for a pilot); without them, `/api/auth/request-code` returns 503. Document the one-time legacy migration: existing pilot users sign in, and the app claims the workspace from their browser's stored UUID automatically. Note that the backup now also carries `data/auth/` (sessions/users) — already covered by the volume backup.
 
-- [ ] **Step 3: Verify + commit**
+- [x] **Step 3: Verify + commit**
 
 Run: `python -m pytest -q && python -m app.eval` → green; `npm run build` → clean.
 ```bash
