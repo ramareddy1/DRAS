@@ -392,20 +392,16 @@ def results(job_id: str, account: Account = Depends(require_account)):
 
 
 @app.get("/api/results/{job_id}/export")
-def export(
-    job_id: str,
-    x_account_id: str = Header(default=""),
-    account_id: str = "",
-):
-    """Export accepts X-Account-Id OR ?account_id= because <a href> downloads
-    can't set a header. Pilot only; production should use a short-lived
-    signed token."""
-    acc_id = x_account_id or account_id
-    if not acc_id:
-        raise HTTPException(status_code=401, detail="Account not initialized.")
-    acc = accounts_memory.load_account(acc_id)
+def export(job_id: str, token: str = ""):
+    """Download via a short-lived signed token — <a href> can't set headers,
+    and long-lived credentials must never live in URLs."""
+    from .auth.tokens import check_export_token
+    account_id = check_export_token(token, job_id)
+    if account_id is None:
+        raise HTTPException(status_code=401, detail="Export link invalid or expired.")
+    acc = accounts_memory.load_account(account_id)
     if acc is None:
-        raise HTTPException(status_code=401, detail=f"Unknown account id '{acc_id}'.")
+        raise HTTPException(status_code=404, detail="Workspace not found.")
     job = _load_job_for_account(job_id, acc)
     from .models import ReconcileResult, Summary
     result = ReconcileResult(
@@ -427,6 +423,14 @@ def export(
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f'attachment; filename="{fname}"'},
     )
+
+
+@app.post("/api/results/{job_id}/export-token")
+def export_token(job_id: str, account: Account = Depends(require_account)):
+    """Mint a 5-minute download token for a job the caller can access."""
+    _load_job_for_account(job_id, account)   # 404 unless it's theirs
+    from .auth.tokens import make_export_token
+    return {"token": make_export_token(job_id, account.id)}
 
 
 # ===========================================================================

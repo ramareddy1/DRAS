@@ -782,7 +782,7 @@ git commit -m "feat: decision log and user-taught rules carry user identity"
 - Modify: `backend/app/main.py` (export endpoints)
 - Test: `backend/tests/test_export_tokens.py`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `backend/tests/test_export_tokens.py`:
 ```python
@@ -805,9 +805,9 @@ def test_token_expires(tmp_path, monkeypatch):
     assert tokens.check_export_token(t, "job-1") is None
 ```
 
-- [ ] **Step 2: Run to verify it fails** → module doesn't exist.
+- [x] **Step 2: Run to verify it fails** → module doesn't exist.
 
-- [ ] **Step 3: Implement tokens.py**
+- [x] **Step 3: Implement tokens.py**
 
 ```python
 """HMAC-signed, short-lived export tokens.
@@ -867,7 +867,7 @@ def check_export_token(token: str, job_id: str) -> Optional[str]:
     return t_account
 ```
 
-- [ ] **Step 4: Rewire the export endpoints in main.py**
+- [x] **Step 4: Rewire the export endpoints in main.py**
 
 ```python
 @app.post("/api/results/{job_id}/export-token")
@@ -889,7 +889,7 @@ Rewrite `export`: signature becomes `def export(job_id: str, token: str = "")`; 
 ```
 (rest unchanged). Add an endpoint test to `test_export_tokens.py` using the client fixture: login → create account → export-token for a missing job → 404; and `GET /api/results/x/export?token=garbage` → 401.
 
-- [ ] **Step 5: Verify + commit**
+- [x] **Step 5: Verify + commit**
 
 Run: `python -m pytest -q` → all pass; `grep -n "account_id: str = \"\"" backend/app/main.py` → gone.
 ```bash
