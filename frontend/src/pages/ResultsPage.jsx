@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
-import { getExportToken, getResults } from "../api/client.js";
+import { getExportToken, getResults, getStatus } from "../api/client.js";
 import DataTable from "../components/DataTable.jsx";
 import { saveHistoryItem, loadHistory } from "../history.js";
 
@@ -67,27 +67,61 @@ export default function ResultsPage() {
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
   const [tab, setTab] = useState("discrepancies");
+  const [jobStatus, setJobStatus] = useState(null);
 
   const reload = () => getResults(id).then(setData).catch((e) => setError(e.message));
 
   useEffect(() => {
-    getResults(id).then((d) => {
-      setData(d);
-      saveHistoryItem({
-        job_id: d.job_id,
-        created_at: d.created_at,
-        recon_type: d.config?.recon_type,
-        file_a: d.filenames?.a,
-        file_b: d.filenames?.b,
-        label_a: d.config?.label_a,
-        label_b: d.config?.label_b,
-        match_rate: d.summary?.matched_pct,
-        discrepancy_value: d.summary?.total_discrepancy_value,
-      });
-    }).catch((e) => setError(e.message));
+    let cancelled = false;
+    let timer;
+
+    const poll = () => {
+      getStatus(id).then((s) => {
+        if (cancelled) return;
+        setJobStatus(s);
+        if (s.status === "processing") {
+          timer = setTimeout(poll, 1500);
+          return;
+        }
+        if (s.status === "error") return;
+        getResults(id).then((d) => {
+          if (cancelled) return;
+          setData(d);
+          saveHistoryItem({
+            job_id: d.job_id,
+            created_at: d.created_at,
+            recon_type: d.config?.recon_type,
+            file_a: d.filenames?.a,
+            file_b: d.filenames?.b,
+            label_a: d.config?.label_a,
+            label_b: d.config?.label_b,
+            match_rate: d.summary?.matched_pct,
+            discrepancy_value: d.summary?.total_discrepancy_value,
+          });
+        }).catch((e) => setError(e.message));
+      }).catch((e) => setError(e.message));
+    };
+    poll();
+
+    return () => { cancelled = true; clearTimeout(timer); };
   }, [id]);
 
   if (error) return <div className="text-bad">Error: {error}</div>;
+  if (jobStatus?.status === "error") {
+    return <div className="text-bad">Reconciliation failed: {jobStatus.error}</div>;
+  }
+  if (jobStatus?.status === "processing") {
+    const p = jobStatus.progress;
+    const pct = p ? Math.round((p.done / p.total) * 100) : 5;
+    return (
+      <div className="max-w-md mx-auto mt-24 text-center">
+        <div className="text-slate-500 mb-3">Reconciling… {p ? `${pct}%` : ""}</div>
+        <div className="w-full bg-slate-200 rounded-full h-2">
+          <div className="bg-brand h-2 rounded-full transition-all" style={{ width: `${pct}%` }} />
+        </div>
+      </div>
+    );
+  }
   if (!data) return <div className="text-slate-500">Loading…</div>;
 
   const s = data.summary;

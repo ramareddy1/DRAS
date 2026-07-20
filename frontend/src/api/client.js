@@ -64,6 +64,10 @@ export async function getResults(id) {
   return handle(await accountFetch(`${BASE}/api/results/${id}`));
 }
 
+export async function getStatus(id) {
+  return handle(await accountFetch(`${BASE}/api/status/${id}`));
+}
+
 export async function getMyAccount() {
   return handle(await accountFetch(`${BASE}/api/accounts/me`));
 }
