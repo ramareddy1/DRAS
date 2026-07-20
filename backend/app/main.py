@@ -318,11 +318,15 @@ def _run_job_background(job_id: str, account: Account, df_a, df_b, cfg: Reconcil
     A per-job wall-clock timeout guards against a hung LLM call or a
     pathologically large file: past JOB_TIMEOUT_SECONDS the job is marked
     failed even though the underlying thread (Python can't kill threads) may
-    keep running harmlessly in the background.
+    keep running in the background — it no longer writes progress once a
+    timeout has been declared.
     """
     last_write = [0.0]
+    timed_out = threading.Event()
 
     def throttled_progress(done: int, total: int) -> None:
+        if timed_out.is_set():
+            return
         now = time.time()
         if now - last_write[0] < 1.0 and done < total:
             return
@@ -348,6 +352,7 @@ def _run_job_background(job_id: str, account: Account, df_a, df_b, cfg: Reconcil
     thread.join(JOB_TIMEOUT_SECONDS)
 
     if thread.is_alive():
+        timed_out.set()
         storage.update_job(
             job_id, status="error",
             error=f"Job exceeded the {JOB_TIMEOUT_SECONDS}s processing limit.",

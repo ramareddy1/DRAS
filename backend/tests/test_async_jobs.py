@@ -94,10 +94,8 @@ def test_job_progress_reaches_final_value(client):
 
 
 def test_job_times_out_and_is_marked_error(client, monkeypatch):
-    monkeypatch.setenv("RECONOPS_JOB_TIMEOUT_SECONDS", "0")
-    import importlib
     from app import main
-    importlib.reload(main)
+    monkeypatch.setattr(main, "JOB_TIMEOUT_SECONDS", 0)
 
     def slow_run_job(**kwargs):
         time.sleep(0.2)
