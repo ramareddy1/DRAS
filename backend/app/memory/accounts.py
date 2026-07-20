@@ -1,27 +1,21 @@
 """Account-scoped storage.
 
-Each account is one directory under data/accounts/{id}/. This module owns
-the lifecycle (create, load, update) for the Account entity and bootstraps
-the directory layout that later memory modules (rules, decisions, triage,
-metrics, etc.) write into.
+Each account is one row in the `accounts` Postgres table, keyed by its UUID.
+This module owns the lifecycle (create, load, update) for the Account
+entity — later memory modules (rules, decisions, triage, metrics) reference
+the same id as their own `account_id` foreign key.
 
-The pilot has no auth — the UUID returned at creation is the access token.
+The pilot has no auth beyond the UUID/session pairing set up in Phase 2.1.
 """
 from __future__ import annotations
 
-import json
-import os
 import re
-from datetime import datetime
-from pathlib import Path
 from typing import Optional
 
-from ..config import data_dir
 from ..models import Account, AccountProfile
-from .fsutil import account_lock, atomic_write_json
-
-DATA_DIR = data_dir()
-ACCOUNTS_DIR = DATA_DIR / "accounts"
+from ..db.base import session_scope
+from ..db.models import AccountORM
+from .fsutil import account_lock
 
 # UUID v4 with dashes, lowercase hex
 _ID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
@@ -31,35 +25,21 @@ def _is_valid_id(account_id: str) -> bool:
     return bool(_ID_RE.match(account_id or ""))
 
 
-def _account_dir(account_id: str) -> Path:
-    return ACCOUNTS_DIR / account_id
-
-
-def _profile_path(account_id: str) -> Path:
-    return _account_dir(account_id) / "profile.json"
-
-
-def _bootstrap_dirs(account_id: str) -> None:
-    """Create the account's directory so later phases can write into it."""
-    d = _account_dir(account_id)
-    d.mkdir(parents=True, exist_ok=True)
-
-
 def create_account(display_name: Optional[str] = None) -> Account:
     acc = Account(display_name=display_name)
-    _bootstrap_dirs(acc.id)
-    atomic_write_json(_profile_path(acc.id), json.loads(acc.model_dump_json()), indent=2)
+    with session_scope() as s:
+        s.add(AccountORM(id=acc.id, payload=acc.model_dump(mode="json")))
     return acc
 
 
 def load_account(account_id: str) -> Optional[Account]:
     if not _is_valid_id(account_id):
         return None
-    p = _profile_path(account_id)
-    if not p.exists():
-        return None
-    data = json.loads(p.read_text(encoding="utf-8"))
-    return Account.model_validate(data)
+    with session_scope() as s:
+        row = s.get(AccountORM, account_id)
+        if row is None:
+            return None
+        return Account.model_validate(row.payload)
 
 
 def update_profile(account_id: str, partial: dict) -> Account:
@@ -70,9 +50,14 @@ def update_profile(account_id: str, partial: dict) -> Account:
         merged = acc.profile.model_dump()
         merged.update({k: v for k, v in partial.items() if v is not None})
         acc.profile = AccountProfile.model_validate(merged)
-        atomic_write_json(_profile_path(account_id), json.loads(acc.model_dump_json()), indent=2)
+        with session_scope() as s:
+            row = s.get(AccountORM, account_id)
+            row.payload = acc.model_dump(mode="json")
     return acc
 
 
 def account_exists(account_id: str) -> bool:
-    return _is_valid_id(account_id) and _profile_path(account_id).exists()
+    if not _is_valid_id(account_id):
+        return False
+    with session_scope() as s:
+        return s.get(AccountORM, account_id) is not None
