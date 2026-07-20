@@ -1,4 +1,5 @@
 import importlib
+import time
 
 import pandas as pd
 import pytest
@@ -79,3 +80,38 @@ def test_upload_persists_processing_status_before_response(client, monkeypatch):
     job = storage.load_job(r.json()["job_id"])
     assert job["status"] == "error"
     assert "bad file" in job["error"]
+
+
+def test_job_progress_reaches_final_value(client):
+    _login(client)
+    acc = client.post("/api/accounts", json={}).json()
+    r = _upload(client, acc["id"])
+    job_id = r.json()["job_id"]
+
+    from app import storage
+    job = storage.load_job(job_id)
+    assert job["progress"] == {"done": 2, "total": 2}
+
+
+def test_job_times_out_and_is_marked_error(client, monkeypatch):
+    monkeypatch.setenv("RECONOPS_JOB_TIMEOUT_SECONDS", "0")
+    import importlib
+    from app import main
+    importlib.reload(main)
+
+    def slow_run_job(**kwargs):
+        time.sleep(0.2)
+        raise AssertionError("should have timed out before this returns")
+    monkeypatch.setattr(main, "run_job", slow_run_job)
+
+    from fastapi.testclient import TestClient
+    with TestClient(main.app) as client2:
+        _login(client2)
+        acc = client2.post("/api/accounts", json={}).json()
+        r = _upload(client2, acc["id"])
+        job_id = r.json()["job_id"]
+
+    from app import storage
+    job = storage.load_job(job_id)
+    assert job["status"] == "error"
+    assert "processing limit" in job["error"]

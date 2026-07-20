@@ -6,10 +6,12 @@ import json
 import logging
 import math
 import os
+import threading
+import time
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime
-from typing import Optional
+from typing import Any, Dict, Optional
 
 from dotenv import load_dotenv
 from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
@@ -41,6 +43,7 @@ from . import storage
 load_dotenv()
 
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
+JOB_TIMEOUT_SECONDS = int(os.getenv("RECONOPS_JOB_TIMEOUT_SECONDS", "900"))
 
 from .auth import members as members_store
 from .auth.routes import require_user, router as auth_router
@@ -312,16 +315,53 @@ def _run_job_background(job_id: str, account: Account, df_a, df_b, cfg: Reconcil
     Executes after the HTTP response has already been sent (FastAPI
     BackgroundTasks) — nothing here can affect the response the client saw,
     so failures are persisted onto the job instead of raised as HTTP errors.
+    A per-job wall-clock timeout guards against a hung LLM call or a
+    pathologically large file: past JOB_TIMEOUT_SECONDS the job is marked
+    failed even though the underlying thread (Python can't kill threads) may
+    keep running harmlessly in the background.
     """
-    try:
-        result = run_job(account=account, df_a=df_a, df_b=df_b, cfg=cfg, job_id=job_id)
-    except Exception as e:
-        import sentry_sdk
-        sentry_sdk.set_tag("job_id", job_id)
-        sentry_sdk.capture_exception(e)
-        storage.update_job(job_id, status="error", error=str(e))
+    last_write = [0.0]
+
+    def throttled_progress(done: int, total: int) -> None:
+        now = time.time()
+        if now - last_write[0] < 1.0 and done < total:
+            return
+        last_write[0] = now
+        try:
+            storage.update_job(job_id, progress={"done": done, "total": total})
+        except FileNotFoundError:
+            pass
+
+    outcome: Dict[str, Any] = {}
+
+    def target():
+        try:
+            outcome["result"] = run_job(
+                account=account, df_a=df_a, df_b=df_b, cfg=cfg, job_id=job_id,
+                progress_cb=throttled_progress,
+            )
+        except Exception as e:
+            outcome["error"] = e
+
+    thread = threading.Thread(target=target, daemon=True)
+    thread.start()
+    thread.join(JOB_TIMEOUT_SECONDS)
+
+    if thread.is_alive():
+        storage.update_job(
+            job_id, status="error",
+            error=f"Job exceeded the {JOB_TIMEOUT_SECONDS}s processing limit.",
+        )
         return
 
+    if "error" in outcome:
+        import sentry_sdk
+        sentry_sdk.set_tag("job_id", job_id)
+        sentry_sdk.capture_exception(outcome["error"])
+        storage.update_job(job_id, status="error", error=str(outcome["error"]))
+        return
+
+    result = outcome["result"]
     fields = _clean({
         "status": "complete",
         "summary": result.summary.model_dump(),
