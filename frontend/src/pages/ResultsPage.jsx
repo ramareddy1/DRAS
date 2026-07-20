@@ -72,6 +72,10 @@ export default function ResultsPage() {
   const reload = () => getResults(id).then(setData).catch((e) => setError(e.message));
 
   useEffect(() => {
+    setError("");
+    setData(null);
+    setJobStatus(null);
+
     let cancelled = false;
     let timer;
 
@@ -98,8 +102,14 @@ export default function ResultsPage() {
             match_rate: d.summary?.matched_pct,
             discrepancy_value: d.summary?.total_discrepancy_value,
           });
-        }).catch((e) => setError(e.message));
-      }).catch((e) => setError(e.message));
+        }).catch((e) => {
+          if (cancelled) return;
+          setError(e.message);
+        });
+      }).catch((e) => {
+        if (cancelled) return;
+        setError(e.message);
+      });
     };
     poll();
 
