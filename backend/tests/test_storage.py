@@ -58,3 +58,20 @@ def test_update_job_missing_job_raises(tmp_path, monkeypatch):
 
     with pytest.raises(FileNotFoundError):
         storage.update_job("nope", status="error")
+
+
+def test_reap_stale_jobs_marks_processing_as_error(tmp_path, monkeypatch):
+    monkeypatch.setenv("RECONOPS_DATA_DIR", str(tmp_path))
+    import importlib
+    from app import storage
+    importlib.reload(storage)
+
+    storage.save_job("stuck", {"job_id": "stuck", "account_id": "A", "status": "processing"})
+    storage.save_job("done", {"job_id": "done", "account_id": "A", "status": "complete"})
+
+    count = storage.reap_stale_jobs()
+
+    assert count == 1
+    assert storage.load_job("stuck")["status"] == "error"
+    assert "restarted" in storage.load_job("stuck")["error"]
+    assert storage.load_job("done")["status"] == "complete"

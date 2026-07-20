@@ -66,6 +66,7 @@ async def _retention_loop():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     storage.ensure_dirs()
+    storage.reap_stale_jobs()
     task = asyncio.create_task(_retention_loop())
     yield
     task.cancel()

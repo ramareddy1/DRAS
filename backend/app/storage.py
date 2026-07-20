@@ -85,6 +85,29 @@ def list_jobs(account_id: str, limit: int = 50) -> list:
     return out[:limit]
 
 
+def reap_stale_jobs() -> int:
+    """Mark every job still 'processing' as failed.
+
+    Called once at process startup. A background job's execution thread
+    cannot survive the process that started it being killed and restarted,
+    so any job still 'processing' when a fresh process boots was orphaned by
+    a crash — this doesn't need a staleness/time-window check.
+    """
+    ensure_dirs()
+    count = 0
+    for p in JOBS_DIR.glob("*.json"):
+        try:
+            job = json.loads(p.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if job.get("status") == "processing":
+            job["status"] = "error"
+            job["error"] = "Worker restarted while this job was processing."
+            atomic_write_json(p, job)
+            count += 1
+    return count
+
+
 def cleanup():
     ensure_dirs()
     now = time.time()

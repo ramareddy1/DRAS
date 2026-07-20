@@ -144,3 +144,29 @@ def test_status_endpoint_reports_error(client, monkeypatch):
     status = client.get(f"/api/status/{job_id}", headers=h).json()
     assert status["status"] == "error"
     assert "bad file" in status["error"]
+
+
+def test_startup_reaps_jobs_left_processing_by_a_killed_worker(tmp_path, monkeypatch):
+    monkeypatch.setenv("RECONOPS_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("RECONOPS_AUTH_DEV", "1")
+    from app.memory import accounts as accounts_memory, rules_store
+    importlib.reload(accounts_memory); importlib.reload(rules_store)
+    from app import storage
+    importlib.reload(storage)
+
+    acc = accounts_memory.create_account()
+    rules_store.seed_defaults(acc.id)
+    storage.save_job("orphaned", {
+        "job_id": "orphaned", "account_id": acc.id,
+        "created_at": "2026-07-01T00:00:00Z", "status": "processing",
+    })
+
+    from fastapi.testclient import TestClient
+    from app import main
+    importlib.reload(main)
+    with TestClient(main.app):
+        pass   # entering the context runs the lifespan startup reaper
+
+    job = storage.load_job("orphaned")
+    assert job["status"] == "error"
+    assert "restarted" in job["error"]
