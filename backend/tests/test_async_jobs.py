@@ -113,3 +113,34 @@ def test_job_times_out_and_is_marked_error(client, monkeypatch):
     job = storage.load_job(job_id)
     assert job["status"] == "error"
     assert "processing limit" in job["error"]
+
+
+def test_status_endpoint_reports_processing_then_complete(client):
+    _login(client)
+    acc = client.post("/api/accounts", json={}).json()
+    h = {"X-Account-Id": acc["id"]}
+    r = _upload(client, acc["id"])
+    job_id = r.json()["job_id"]
+
+    status = client.get(f"/api/status/{job_id}", headers=h).json()
+    assert status["status"] == "complete"          # background task already ran
+    assert status["progress"] == {"done": 2, "total": 2}
+    assert status["error"] is None
+
+
+def test_status_endpoint_reports_error(client, monkeypatch):
+    from app import main
+
+    def boom(**kwargs):
+        raise ValueError("bad file")
+    monkeypatch.setattr(main, "run_job", boom)
+
+    _login(client)
+    acc = client.post("/api/accounts", json={}).json()
+    h = {"X-Account-Id": acc["id"]}
+    r = _upload(client, acc["id"])
+    job_id = r.json()["job_id"]
+
+    status = client.get(f"/api/status/{job_id}", headers=h).json()
+    assert status["status"] == "error"
+    assert "bad file" in status["error"]

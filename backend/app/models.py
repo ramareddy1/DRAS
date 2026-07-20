@@ -108,6 +108,7 @@ class JobStatus(BaseModel):
     recon_type: Optional[str] = None
     label_a: Optional[str] = None
     label_b: Optional[str] = None
+    progress: Optional[Dict[str, int]] = None
 
 
 class Summary(BaseModel):

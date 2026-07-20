@@ -32,7 +32,7 @@ from .memory import (
     triage as triage_store,
 )
 from .models import (
-    Account, BindResponse, DecisionLogEntry, ReconcileConfig, Rule, SemanticBinding,
+    Account, BindResponse, DecisionLogEntry, JobStatus, ReconcileConfig, Rule, SemanticBinding,
 )
 from .report import build_report
 from .tools.binding import bind_columns
@@ -440,10 +440,20 @@ def list_jobs_endpoint(account: Account = Depends(require_account)):
     return _clean({"jobs": storage.list_jobs(account.id)})
 
 
-@app.get("/api/status/{job_id}")
+@app.get("/api/status/{job_id}", response_model=JobStatus)
 def status(job_id: str, account: Account = Depends(require_account)):
     job = _load_job_for_account(job_id, account)
-    return {"job_id": job_id, "status": job.get("status", "complete"), "created_at": job["created_at"]}
+    cfg = job.get("config") or {}
+    return JobStatus(
+        job_id=job_id,
+        status=job.get("status", "complete"),
+        error=job.get("error"),
+        created_at=job["created_at"],
+        recon_type=cfg.get("recon_type"),
+        label_a=cfg.get("label_a"),
+        label_b=cfg.get("label_b"),
+        progress=job.get("progress"),
+    )
 
 
 @app.get("/api/results/{job_id}")
