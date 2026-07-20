@@ -326,6 +326,11 @@ def _run_job_background(job_id: str, account: Account, df_a, df_b, cfg: Reconcil
     timed_out = threading.Event()
 
     def throttled_progress(done: int, total: int) -> None:
+        # Narrow race: a call already past this check when the main thread
+        # times out can still finish its write after status="error" is
+        # persisted below — update_job takes no lock, so last writer wins.
+        # Leaves the job stuck "processing" until the next startup reaper
+        # pass; accepted as a rare, self-healing race for the pilot.
         if timed_out.is_set():
             return
         now = time.time()

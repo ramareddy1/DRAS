@@ -64,6 +64,12 @@ const TABS = [
 
 export default function ResultsPage() {
   const { id } = useParams();
+  // Remount on every job id change so a job-to-job navigation never renders
+  // a stale frame of the previous job's data/error before state resets.
+  return <ResultsPageForJob key={id} id={id} />;
+}
+
+function ResultsPageForJob({ id }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
   const [tab, setTab] = useState("discrepancies");
