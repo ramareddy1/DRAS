@@ -1479,8 +1479,20 @@ gate UI with dev-mode codes for local work.
 - **Done when:** eval passes against Postgres-backed stores; `data/` contains nothing but local cache; deleting an account cascades.
 
 ### 2.3 Async job execution
-- Background worker (start with FastAPI `BackgroundTasks` + persisted `processing` status; graduate to RQ/arq if concurrency demands). Upload returns immediately; frontend polls `GET /api/status/{job_id}` (already exists). Persist partial progress (rows processed) for the progress bar; enforce a per-job wall-clock timeout.
-- **Done when:** a 100k-row file completes without an open HTTP request; a killed worker leaves a resumable/failed job, never a lost one.
+**Implemented** — see [docs/plans/2026-07-19-async-job-execution.md](docs/plans/2026-07-19-async-job-execution.md)
+(implementation plan). Delivered: `/api/upload` persists `status="processing"`
+and hands reconciliation to a `BackgroundTasks`-dispatched thread so the HTTP
+request returns immediately; `run_job` reports throttled progress (≤1 disk
+write/sec) consumed by an upgraded `/api/status/{job_id}`; a per-job
+wall-clock timeout (`RECONOPS_JOB_TIMEOUT_SECONDS`, default 900s) marks a
+hung job `"error"`; a startup reaper marks any job still `"processing"` as
+failed after a killed/restarted worker; the Results page polls status and
+renders a live progress bar before switching to results. Known limitation:
+`_run_job_background` blocks a threadpool thread on `.join()`, sharing
+Starlette's default threadpool with the sync status-polling route — accepted
+for this pilot's single-worker deployment per this plan's explicit non-goal
+(a dedicated task queue), revisit before scaling concurrency.
+- **Done when:** a 100k-row file completes without an open HTTP request; a killed worker leaves a resumable/failed job, never a lost one. ✓ (test-enforced: reaper, timeout, and progress-throttling tests; progress bar/error-state UI verified by build + code trace only — no interactive browser walkthrough was performed)
 
 ### 2.4 Production deployment
 **Implemented** — see [docs/DEPLOY.md](docs/DEPLOY.md) (runbook) and
