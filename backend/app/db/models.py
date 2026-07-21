@@ -29,3 +29,11 @@ class JobORM(Base):
     created_at = Column(String, nullable=True, index=True)
     status = Column(String, nullable=False, default="complete")
     payload = Column(JSONB, nullable=False, default=dict)
+
+
+class RuleORM(Base):
+    __tablename__ = "rules"
+
+    id = Column(String(36), primary_key=True)
+    account_id = Column(String(36), ForeignKey("accounts.id", ondelete="CASCADE"), nullable=False, index=True)
+    payload = Column(JSONB, nullable=False, default=dict)

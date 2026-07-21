@@ -26,9 +26,16 @@ def test_concurrent_add_rule_loses_no_writes(data_dir, monkeypatch):
     from app.memory import fsutil, rules_store
     importlib.reload(fsutil)
     importlib.reload(rules_store)
+    from app.db.base import session_scope
+    from app.db.models import AccountORM
     from app.models import Rule
 
     account_id = "11111111-1111-4111-8111-111111111111"
+    # rules.account_id carries a real Postgres FK -> accounts.id; insert a
+    # bare row so the concurrent add_rule inserts below satisfy it. This test
+    # only exercises the account_lock race, not the account domain object.
+    with session_scope() as s:
+        s.add(AccountORM(id=account_id, payload={}))
     n = 25
 
     def add(i):

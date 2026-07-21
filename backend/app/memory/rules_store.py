@@ -4,9 +4,9 @@ A rule is a structured (`kind`, `when`, `then`) triple. The dispatcher knows
 how to evaluate each kind on a row context and returns a Rationale-shaped
 override (or None if no match).
 
-Rules are stored as `data/accounts/{id}/rules.json` — a single JSON file
-keyed by rule id. Default fee-pattern rules are seeded at account creation
-so brands get a sensible baseline without any setup.
+Rules live in the `rules` Postgres table, one row per rule, scoped by
+`account_id`. Default fee-pattern rules are seeded at account creation so
+brands get a sensible baseline without any setup.
 
 DSL choice (pilot-only). We deliberately avoid runtime-evaluating user
 predicates as Python code. Each `kind` has a small fixed predicate shape
@@ -15,21 +15,12 @@ which makes the rule store safe by construction.
 """
 from __future__ import annotations
 
-import json
-import os
-from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from ..config import data_dir
 from ..models import Alt, Evidence, Rationale, Rule
-from .fsutil import account_lock, atomic_write_json
-
-
-DATA_DIR = data_dir()
-
-
-def _rules_path(account_id: str) -> Path:
-    return DATA_DIR / "accounts" / account_id / "rules.json"
+from ..db.base import session_scope
+from ..db.models import RuleORM
+from .fsutil import account_lock
 
 
 # ---------------------------------------------------------------------------
@@ -72,29 +63,22 @@ DEFAULT_RULES_FOR_ACCOUNT = [
 # ---------------------------------------------------------------------------
 
 
-def _load_raw(account_id: str) -> Dict[str, Any]:
-    p = _rules_path(account_id)
-    if not p.exists():
-        return {"rules": []}
-    return json.loads(p.read_text(encoding="utf-8"))
-
-
-def _save_raw(account_id: str, payload: Dict[str, Any]) -> None:
-    atomic_write_json(_rules_path(account_id), payload, indent=2)
-
-
 def load_rules(account_id: str) -> List[Rule]:
-    raw = _load_raw(account_id)
-    return [Rule.model_validate(r) for r in raw.get("rules", [])]
+    with session_scope() as s:
+        rows = s.query(RuleORM).filter(RuleORM.account_id == account_id).all()
+        return [Rule.model_validate(row.payload) for row in rows]
 
 
 def save_rules(account_id: str, rules: List[Rule]) -> None:
-    _save_raw(account_id, {"rules": [r.model_dump(mode="json") for r in rules]})
+    with session_scope() as s:
+        s.query(RuleORM).filter(RuleORM.account_id == account_id).delete()
+        for r in rules:
+            s.add(RuleORM(id=r.id, account_id=account_id, payload=r.model_dump(mode="json")))
 
 
 def seed_defaults(account_id: str) -> None:
     """Seed default fee-pattern rules. Called once at account creation."""
-    if _rules_path(account_id).exists():
+    if load_rules(account_id):
         return
     rules = [Rule(account_id=account_id, **defn) for defn in DEFAULT_RULES_FOR_ACCOUNT]
     save_rules(account_id, rules)
