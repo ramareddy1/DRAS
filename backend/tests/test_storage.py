@@ -1,11 +1,22 @@
 import pytest
 
 
-def test_list_jobs_filters_by_account_and_sorts(tmp_path, monkeypatch):
-    monkeypatch.setenv("RECONOPS_DATA_DIR", str(tmp_path))
-    import importlib
+def _seed_account(account_id: str) -> None:
+    """Insert a bare AccountORM row so job_id FK inserts below satisfy the
+    accounts.id foreign key — these tests only exercise storage.*, not the
+    account domain object, so a raw id/empty payload row is sufficient."""
+    from app.db.base import session_scope
+    from app.db.models import AccountORM
+
+    with session_scope() as s:
+        s.add(AccountORM(id=account_id, payload={}))
+
+
+def test_list_jobs_filters_by_account_and_sorts():
     from app import storage
-    importlib.reload(storage)
+
+    _seed_account("A")
+    _seed_account("B")
 
     storage.save_job("j1", {"job_id": "j1", "account_id": "A", "created_at": "2026-07-01T00:00:00Z",
                             "status": "complete", "summary": {"matched_pct": 90.0}})
@@ -20,26 +31,10 @@ def test_list_jobs_filters_by_account_and_sorts(tmp_path, monkeypatch):
     assert all(j.get("account_id") != "B" for j in jobs)
 
 
-def test_list_jobs_tolerates_corrupt_files(tmp_path, monkeypatch):
-    monkeypatch.setenv("RECONOPS_DATA_DIR", str(tmp_path))
-    import importlib
+def test_update_job_merges_fields():
     from app import storage
-    importlib.reload(storage)
 
-    storage.save_job("ok", {"job_id": "ok", "account_id": "A",
-                            "created_at": "2026-07-01T00:00:00Z", "status": "complete"})
-    storage.ensure_dirs()
-    (storage.JOBS_DIR / "bad.json").write_text("{truncated", encoding="utf-8")
-
-    jobs = storage.list_jobs("A")
-    assert [j["job_id"] for j in jobs] == ["ok"]
-
-
-def test_update_job_merges_fields(tmp_path, monkeypatch):
-    monkeypatch.setenv("RECONOPS_DATA_DIR", str(tmp_path))
-    import importlib
-    from app import storage
-    importlib.reload(storage)
+    _seed_account("A")
 
     storage.save_job("j1", {"job_id": "j1", "account_id": "A", "status": "processing"})
     storage.update_job("j1", status="complete", summary={"matched_pct": 100.0})
@@ -50,21 +45,17 @@ def test_update_job_merges_fields(tmp_path, monkeypatch):
     assert job["account_id"] == "A"   # untouched fields survive
 
 
-def test_update_job_missing_job_raises(tmp_path, monkeypatch):
-    monkeypatch.setenv("RECONOPS_DATA_DIR", str(tmp_path))
-    import importlib
+def test_update_job_missing_job_raises():
     from app import storage
-    importlib.reload(storage)
 
     with pytest.raises(FileNotFoundError):
         storage.update_job("nope", status="error")
 
 
-def test_reap_stale_jobs_marks_processing_as_error(tmp_path, monkeypatch):
-    monkeypatch.setenv("RECONOPS_DATA_DIR", str(tmp_path))
-    import importlib
+def test_reap_stale_jobs_marks_processing_as_error():
     from app import storage
-    importlib.reload(storage)
+
+    _seed_account("A")
 
     storage.save_job("stuck", {"job_id": "stuck", "account_id": "A", "status": "processing"})
     storage.save_job("done", {"job_id": "done", "account_id": "A", "status": "complete"})
@@ -75,3 +66,20 @@ def test_reap_stale_jobs_marks_processing_as_error(tmp_path, monkeypatch):
     assert storage.load_job("stuck")["status"] == "error"
     assert "restarted" in storage.load_job("stuck")["error"]
     assert storage.load_job("done")["status"] == "complete"
+
+
+def test_deleting_account_cascades_to_jobs():
+    from app.db.base import session_scope
+    from app.db.models import AccountORM, JobORM
+    from app import storage
+    from app.memory import accounts
+
+    acc = accounts.create_account()
+    storage.save_job("j1", {"job_id": "j1", "account_id": acc.id, "status": "complete"})
+
+    with session_scope() as s:
+        row = s.get(AccountORM, acc.id)
+        s.delete(row)
+
+    with session_scope() as s:
+        assert s.get(JobORM, "j1") is None

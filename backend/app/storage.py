@@ -1,88 +1,95 @@
-"""Filesystem-backed job storage for the pilot."""
+"""Postgres-backed job storage for the pilot."""
 from __future__ import annotations
 
-import json
-import os
-import time
-from pathlib import Path
+from datetime import datetime, timedelta
 from typing import Any, Dict, Optional
 
-from .config import data_dir
-from .memory.fsutil import atomic_write_json
-
-DATA_DIR = data_dir()
-JOBS_DIR = DATA_DIR / "jobs"
-UPLOADS_DIR = DATA_DIR / "uploads"
+from .db.base import session_scope
+from .db.models import JobORM
 
 JOB_TTL_SECONDS = 7 * 24 * 3600
-UPLOAD_TTL_SECONDS = 24 * 3600
 
-
-def ensure_dirs():
-    JOBS_DIR.mkdir(parents=True, exist_ok=True)
-    UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
-
-
-def job_path(job_id: str) -> Path:
-    return JOBS_DIR / f"{job_id}.json"
+_JOB_COLUMNS = {"account_id", "created_at", "status"}
 
 
 def save_job(job_id: str, payload: Dict[str, Any]) -> None:
-    ensure_dirs()
-    atomic_write_json(job_path(job_id), payload)
+    flat = dict(payload)
+    account_id = flat.pop("account_id", None)
+    created_at = flat.pop("created_at", None)
+    status = flat.pop("status", "complete")
+    flat.pop("job_id", None)
+    with session_scope() as s:
+        row = s.get(JobORM, job_id)
+        if row is None:
+            row = JobORM(job_id=job_id)
+            s.add(row)
+        row.account_id = account_id
+        row.created_at = created_at
+        row.status = status
+        row.payload = flat
 
 
 def load_job(job_id: str) -> Optional[Dict[str, Any]]:
-    p = job_path(job_id)
-    if not p.exists():
-        return None
-    return json.loads(p.read_text(encoding="utf-8"))
+    with session_scope() as s:
+        row = s.get(JobORM, job_id)
+        if row is None:
+            return None
+        out = dict(row.payload or {})
+        out["job_id"] = row.job_id
+        out["account_id"] = row.account_id
+        out["created_at"] = row.created_at
+        out["status"] = row.status
+        return out
 
 
 def update_job(job_id: str, **fields: Any) -> None:
-    """Merge fields into an existing job's JSON, preserving the rest.
+    """Merge fields into an existing job, preserving the rest.
 
     Raises FileNotFoundError if the job doesn't exist — callers only ever
     update a job they just created with save_job().
     """
-    job = load_job(job_id)
-    if job is None:
-        raise FileNotFoundError(f"job {job_id} not found")
-    job.update(fields)
-    save_job(job_id, job)
+    with session_scope() as s:
+        row = s.get(JobORM, job_id)
+        if row is None:
+            raise FileNotFoundError(f"job {job_id} not found")
+        payload = dict(row.payload or {})
+        for k, v in fields.items():
+            if k in _JOB_COLUMNS:
+                setattr(row, k, v)
+            else:
+                payload[k] = v
+        row.payload = payload
 
 
 def list_jobs(account_id: str, limit: int = 50) -> list:
-    """Lightweight job listing for one account, newest first.
-
-    O(n) scan over the jobs dir — fine at pilot scale (jobs expire after 7
-    days); Postgres replaces this in Phase 2.
-    """
-    ensure_dirs()
-    out = []
-    for p in JOBS_DIR.glob("*.json"):
-        try:
-            job = json.loads(p.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            continue
-        if job.get("account_id") != account_id:
-            continue
-        s = job.get("summary") or {}
-        out.append({
-            "job_id": job.get("job_id"),
-            "account_id": job.get("account_id"),
-            "created_at": job.get("created_at"),
-            "status": job.get("status", "complete"),
-            "filenames": job.get("filenames"),
-            "recon_type": (job.get("config") or {}).get("recon_type"),
-            "label_a": (job.get("config") or {}).get("label_a"),
-            "label_b": (job.get("config") or {}).get("label_b"),
-            "matched_pct": s.get("matched_pct"),
-            "discrepancies": s.get("discrepancies"),
-            "total_discrepancy_value": s.get("total_discrepancy_value"),
-        })
-    out.sort(key=lambda j: j.get("created_at") or "", reverse=True)
-    return out[:limit]
+    """Lightweight job listing for one account, newest first."""
+    with session_scope() as s:
+        rows = (
+            s.query(JobORM)
+            .filter(JobORM.account_id == account_id)
+            .order_by(JobORM.created_at.desc())
+            .limit(limit)
+            .all()
+        )
+        out = []
+        for row in rows:
+            payload = row.payload or {}
+            summary = payload.get("summary") or {}
+            cfg = payload.get("config") or {}
+            out.append({
+                "job_id": row.job_id,
+                "account_id": row.account_id,
+                "created_at": row.created_at,
+                "status": row.status,
+                "filenames": payload.get("filenames"),
+                "recon_type": cfg.get("recon_type"),
+                "label_a": cfg.get("label_a"),
+                "label_b": cfg.get("label_b"),
+                "matched_pct": summary.get("matched_pct"),
+                "discrepancies": summary.get("discrepancies"),
+                "total_discrepancy_value": summary.get("total_discrepancy_value"),
+            })
+        return out
 
 
 def reap_stale_jobs() -> int:
@@ -93,33 +100,32 @@ def reap_stale_jobs() -> int:
     so any job still 'processing' when a fresh process boots was orphaned by
     a crash — this doesn't need a staleness/time-window check.
     """
-    ensure_dirs()
-    count = 0
-    for p in JOBS_DIR.glob("*.json"):
-        try:
-            job = json.loads(p.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            continue
-        if job.get("status") == "processing":
-            job["status"] = "error"
-            job["error"] = "Worker restarted while this job was processing."
-            atomic_write_json(p, job)
+    with session_scope() as s:
+        rows = s.query(JobORM).filter(JobORM.status == "processing").all()
+        count = 0
+        for row in rows:
+            row.status = "error"
+            payload = dict(row.payload or {})
+            payload["error"] = "Worker restarted while this job was processing."
+            row.payload = payload
             count += 1
-    return count
+        return count
 
 
-def cleanup():
-    ensure_dirs()
-    now = time.time()
-    for p in UPLOADS_DIR.glob("*"):
-        try:
-            if now - p.stat().st_mtime > UPLOAD_TTL_SECONDS:
-                p.unlink()
-        except OSError:
-            pass
-    for p in JOBS_DIR.glob("*.json"):
-        try:
-            if now - p.stat().st_mtime > JOB_TTL_SECONDS:
-                p.unlink()
-        except OSError:
-            pass
+def cleanup() -> None:
+    """Delete jobs older than JOB_TTL_SECONDS, and their S3 uploads if any."""
+    from . import storage_s3
+
+    cutoff = (datetime.utcnow() - timedelta(seconds=JOB_TTL_SECONDS)).isoformat() + "Z"
+    with session_scope() as s:
+        rows = s.query(JobORM).filter(JobORM.created_at < cutoff).all()
+        for row in rows:
+            uploaded = (row.payload or {}).get("uploaded_files") or {}
+            for side in ("a", "b"):
+                key = (uploaded.get(side) or {}).get("key")
+                if key:
+                    try:
+                        storage_s3.delete_object(key)
+                    except Exception:
+                        pass
+            s.delete(row)
