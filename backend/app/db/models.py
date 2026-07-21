@@ -8,7 +8,7 @@ nothing ever queries by individual field.
 """
 from __future__ import annotations
 
-from sqlalchemy import Column, ForeignKey, String
+from sqlalchemy import Column, ForeignKey, Integer, String
 from sqlalchemy.dialects.postgresql import JSONB
 
 from .base import Base
@@ -46,4 +46,12 @@ class TriageItemORM(Base):
     account_id = Column(String(36), ForeignKey("accounts.id", ondelete="CASCADE"), nullable=False, index=True)
     signature = Column(String, nullable=False, index=True)
     state = Column(String, nullable=False, index=True)
+    payload = Column(JSONB, nullable=False, default=dict)
+
+
+class DecisionORM(Base):
+    __tablename__ = "decisions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    account_id = Column(String(36), ForeignKey("accounts.id", ondelete="CASCADE"), nullable=False, index=True)
     payload = Column(JSONB, nullable=False, default=dict)
