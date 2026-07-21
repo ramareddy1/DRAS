@@ -4,10 +4,10 @@ A reconciliation job emits triage items by **signature**, not by row index.
 Recurring items (same kind of gap, week after week) accumulate
 `source_job_ids` on a single TriageItem instead of cluttering the inbox.
 
-Storage: single JSON file `data/accounts/{id}/triage.json` keyed by item
-id. For the pilot we keep both active and resolved items in one file —
-queries filter on `state`. The file stays manageable because dedup
-prevents linear growth.
+Storage: the `triage_items` Postgres table, one row per item, scoped by
+`account_id`. For the pilot we keep both active and resolved items in the
+same table — queries filter on `state`. Row count stays manageable because
+dedup prevents linear growth.
 
 Signature shape
 ---------------
@@ -26,22 +26,14 @@ discrepancies in different months on different orders share a signature.
 from __future__ import annotations
 
 import hashlib
-import json
-import os
 import re
 from datetime import datetime
-from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
-from ..config import data_dir
 from ..models import Rationale, TriageItem, TriageState
-from .fsutil import account_lock, atomic_write_json
-
-DATA_DIR = data_dir()
-
-
-def _path(account_id: str) -> Path:
-    return DATA_DIR / "accounts" / account_id / "triage.json"
+from ..db.base import session_scope
+from ..db.models import TriageItemORM
+from .fsutil import account_lock
 
 
 # ---------------------------------------------------------------------------
@@ -124,24 +116,20 @@ def _hash(parts: Iterable[str]) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _load_raw(account_id: str) -> Dict[str, Any]:
-    p = _path(account_id)
-    if not p.exists():
-        return {"items": []}
-    return json.loads(p.read_text(encoding="utf-8"))
-
-
-def _save_raw(account_id: str, payload: Dict[str, Any]) -> None:
-    atomic_write_json(_path(account_id), payload, indent=2)
-
-
 def load_all(account_id: str) -> List[TriageItem]:
-    raw = _load_raw(account_id)
-    return [TriageItem.model_validate(r) for r in raw.get("items", [])]
+    with session_scope() as s:
+        rows = s.query(TriageItemORM).filter(TriageItemORM.account_id == account_id).all()
+        return [TriageItem.model_validate(row.payload) for row in rows]
 
 
 def save_all(account_id: str, items: List[TriageItem]) -> None:
-    _save_raw(account_id, {"items": [i.model_dump(mode="json") for i in items]})
+    with session_scope() as s:
+        s.query(TriageItemORM).filter(TriageItemORM.account_id == account_id).delete()
+        for i in items:
+            s.add(TriageItemORM(
+                id=i.id, account_id=account_id, signature=i.signature, state=i.state,
+                payload=i.model_dump(mode="json"),
+            ))
 
 
 def list_open(account_id: str) -> List[TriageItem]:

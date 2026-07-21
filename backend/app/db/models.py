@@ -37,3 +37,13 @@ class RuleORM(Base):
     id = Column(String(36), primary_key=True)
     account_id = Column(String(36), ForeignKey("accounts.id", ondelete="CASCADE"), nullable=False, index=True)
     payload = Column(JSONB, nullable=False, default=dict)
+
+
+class TriageItemORM(Base):
+    __tablename__ = "triage_items"
+
+    id = Column(String(36), primary_key=True)
+    account_id = Column(String(36), ForeignKey("accounts.id", ondelete="CASCADE"), nullable=False, index=True)
+    signature = Column(String, nullable=False, index=True)
+    state = Column(String, nullable=False, index=True)
+    payload = Column(JSONB, nullable=False, default=dict)
