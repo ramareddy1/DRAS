@@ -55,3 +55,11 @@ class DecisionORM(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     account_id = Column(String(36), ForeignKey("accounts.id", ondelete="CASCADE"), nullable=False, index=True)
     payload = Column(JSONB, nullable=False, default=dict)
+
+
+class MetricORM(Base):
+    __tablename__ = "metrics"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    account_id = Column(String(36), ForeignKey("accounts.id", ondelete="CASCADE"), nullable=False, index=True)
+    payload = Column(JSONB, nullable=False, default=dict)

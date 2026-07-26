@@ -13,28 +13,19 @@ Three counter-metrics keep the headline honest:
                           too eagerly.
   * `insight_density`   — raw fraction of rows the system handled silently.
 
-This module computes a snapshot per job and appends to
-`data/accounts/{id}/metrics.jsonl` so Phase 5's header trendline can chart
-it without recomputing history.
+This module computes a snapshot per job and appends it to the `metrics`
+Postgres table (one row per snapshot, scoped by `account_id`) so Phase 5's
+header trendline can chart it without recomputing history.
 """
 from __future__ import annotations
 
-import json
-import os
 from datetime import datetime
-from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, List, Optional
 
-from ..config import data_dir
 from ..models import AccountMetrics, Rationale
 from . import decision_log, rules_store
-from .fsutil import account_lock
-
-DATA_DIR = data_dir()
-
-
-def _path(account_id: str) -> Path:
-    return DATA_DIR / "accounts" / account_id / "metrics.jsonl"
+from ..db.base import session_scope
+from ..db.models import MetricORM
 
 
 def _is_auto_handled(rationale: Optional[Rationale]) -> bool:
@@ -138,25 +129,17 @@ def _revocation_rate(account_id: str) -> float:
 
 
 def snapshot(account_id: str, metrics: AccountMetrics) -> None:
-    p = _path(account_id)
-    p.parent.mkdir(parents=True, exist_ok=True)
-    with account_lock(account_id):
-        with p.open("a", encoding="utf-8") as f:
-            f.write(metrics.model_dump_json() + "\n")
+    with session_scope() as s:
+        s.add(MetricORM(account_id=account_id, payload=metrics.model_dump(mode="json")))
 
 
 def series(account_id: str, limit: int = 100) -> List[AccountMetrics]:
-    p = _path(account_id)
-    if not p.exists():
-        return []
-    out: List[AccountMetrics] = []
-    with p.open("r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                out.append(AccountMetrics.model_validate_json(line))
-            except Exception:
-                continue
-    return out[-limit:]
+    with session_scope() as s:
+        rows = (
+            s.query(MetricORM)
+            .filter(MetricORM.account_id == account_id)
+            .order_by(MetricORM.id.desc())
+            .limit(limit)
+            .all()
+        )
+        return [AccountMetrics.model_validate(row.payload) for row in reversed(rows)]
