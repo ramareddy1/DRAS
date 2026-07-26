@@ -27,12 +27,9 @@ from app.replay import replay  # noqa: E402
 def _account_jobs(account_id: str):
     matched = []
     job_count = 0
-    for p in sorted(storage.JOBS_DIR.glob("*.json")):
-        try:
-            job = json.loads(p.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            continue
-        if job.get("account_id") != account_id:
+    for meta in storage.list_jobs(account_id, limit=100_000):
+        job = storage.load_job(meta["job_id"])
+        if job is None:
             continue
         job_count += 1
         matched.extend(job.get("matched", []))
@@ -46,8 +43,7 @@ def main(argv):
     account_id = argv[0]
     job_count, matched = _account_jobs(account_id)
     if job_count == 0:
-        print(f"No persisted jobs found for account {account_id} "
-              f"(data dir: {storage.DATA_DIR}).")
+        print(f"No persisted jobs found for account {account_id}.")
         return 1
 
     report = replay(account_id, matched)
