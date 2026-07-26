@@ -63,6 +63,27 @@ the browser's stored UUID automatically (one-time, first claimant wins).
 The `data/auth/` directory (users, hashed sessions, HMAC secret) lives on
 the same volume as everything else, so the nightly backup already covers it.
 
+## 3c. Database migration
+
+After the first bring-up (and after every `git pull` that adds a new file
+under `backend/alembic/versions/`), apply migrations:
+
+```bash
+sudo docker compose -f docker-compose.prod.yml exec backend alembic upgrade head
+```
+
+**Migrating a pre-Postgres install:** if this server was running before
+Phase 2.2, its account/job/rule/triage/decision/metric data is still JSON
+files on the `reconops-data` volume. Run the one-shot importer once, after
+migrating the schema and before routing real traffic:
+
+```bash
+sudo docker compose -f docker-compose.prod.yml exec backend python -m scripts.import_json_to_postgres --data-dir data
+```
+
+It's safe to re-run — it upserts by existing id and skips already-imported
+decision/metric logs.
+
 ## 4. Smoke test
 
 ```bash
@@ -103,13 +124,18 @@ With `SENTRY_DSN` set, unhandled exceptions also land in Sentry tagged with
 
 ## 7. Backups
 
-All state lives in one volume. Its full name is `<project>_reconops-data`
-where `<project>` is the repo directory name lowercased (clone as `DRAS` →
-`dras_reconops-data`; confirm with `docker volume ls`).
+Two things need backing up: the `postgres-data` volume (accounts, jobs,
+rules, triage items, decisions, metrics — the data of record) and the
+`reconops-data` volume (local cache only — safe to lose, but backed up for
+simplicity). Full volume names are `<project>_postgres-data` and
+`<project>_reconops-data` where `<project>` is the repo directory name
+lowercased (clone as `DRAS` -> `dras_postgres-data`; confirm with
+`docker volume ls`).
 
 Nightly backup with 14-day rotation — add via `sudo crontab -e`:
 
 ```
+0 3 * * * docker compose -f /path/to/DRAS/docker-compose.prod.yml exec -T postgres pg_dump -U reconops reconops | gzip > /root/backups/postgres-$(date +\%F).sql.gz && find /root/backups -name 'postgres-*.sql.gz' -mtime +14 -delete
 0 3 * * * docker run --rm -v dras_reconops-data:/data -v /root/backups:/backup alpine tar czf /backup/reconops-$(date +\%F).tgz -C /data . && find /root/backups -name 'reconops-*.tgz' -mtime +14 -delete
 ```
 
@@ -117,6 +143,8 @@ Nightly backup with 14-day rotation — add via `sudo crontab -e`:
 
 ```bash
 cd DRAS
+sudo docker compose -f docker-compose.prod.yml up -d postgres
+gunzip -c /root/backups/postgres-<YYYY-MM-DD>.sql.gz | sudo docker compose -f docker-compose.prod.yml exec -T postgres psql -U reconops reconops
 sudo docker compose -f docker-compose.prod.yml down
 sudo docker run --rm -v dras_reconops-data:/data -v /root/backups:/backup alpine \
   sh -c "rm -rf /data/* && tar xzf /backup/reconops-<YYYY-MM-DD>.tgz -C /data"
