@@ -1,8 +1,10 @@
 import importlib
 import time
 
+import boto3
 import pandas as pd
 import pytest
+from moto import mock_aws
 
 
 @pytest.fixture()
@@ -11,13 +13,22 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setenv("RECONOPS_AUTH_DEV", "1")
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.delenv("RECONOPS_STUB_LLM", raising=False)
+    # /api/upload now persists both files to S3 (Phase 2.2, task 8) — every
+    # test here that uploads needs a mocked bucket, same as test_storage_s3.py.
+    monkeypatch.setenv("RECONOPS_S3_BUCKET", "reconops-test-bucket")
+    monkeypatch.setenv("RECONOPS_S3_REGION", "us-east-1")
+    monkeypatch.delenv("RECONOPS_S3_ENDPOINT_URL", raising=False)
+    monkeypatch.setenv("RECONOPS_S3_ACCESS_KEY_ID", "testing")
+    monkeypatch.setenv("RECONOPS_S3_SECRET_ACCESS_KEY", "testing")
     from app.memory import accounts as accounts_memory, rules_store
     importlib.reload(accounts_memory); importlib.reload(rules_store)
     from fastapi.testclient import TestClient
     from app import main
     importlib.reload(main)
-    with TestClient(main.app) as c:
-        yield c
+    with mock_aws():
+        boto3.client("s3", region_name="us-east-1").create_bucket(Bucket="reconops-test-bucket")
+        with TestClient(main.app) as c:
+            yield c
 
 
 def _login(client, email="me@x.co"):
@@ -156,9 +167,14 @@ def test_startup_reaps_jobs_left_processing_by_a_killed_worker(tmp_path, monkeyp
 
     acc = accounts_memory.create_account()
     rules_store.seed_defaults(acc.id)
+    # created_at must be recent (not a fixed past date): the retention
+    # background loop's storage.cleanup() also runs during app startup and
+    # would otherwise delete this job outright (TTL-expired) before the
+    # startup reaper this test targets gets a chance to mark it "error".
+    from datetime import datetime
     storage.save_job("orphaned", {
         "job_id": "orphaned", "account_id": acc.id,
-        "created_at": "2026-07-01T00:00:00Z", "status": "processing",
+        "created_at": datetime.utcnow().isoformat() + "Z", "status": "processing",
     })
 
     from fastapi.testclient import TestClient

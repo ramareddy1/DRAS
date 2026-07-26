@@ -39,6 +39,7 @@ from .tools.binding import bind_columns
 from .tools.extract import extract_from_text
 from .tools.ingest import preview, read_table
 from . import storage
+from . import storage_s3
 
 load_dotenv()
 
@@ -291,6 +292,11 @@ async def upload_and_reconcile(
     sentry_sdk.set_tag("account_id", account.id)
     sentry_sdk.set_tag("job_id", job_id)
 
+    key_a = storage_s3.upload_key_for(account.id, job_id, "a", file_a.filename or "a.csv")
+    key_b = storage_s3.upload_key_for(account.id, job_id, "b", file_b.filename or "b.csv")
+    storage_s3.put_object(key_a, data_a)
+    storage_s3.put_object(key_b, data_b)
+
     initial_payload = {
         "job_id": job_id,
         "account_id": account.id,
@@ -302,6 +308,10 @@ async def upload_and_reconcile(
         "filenames": {"a": file_a.filename, "b": file_b.filename},
         "bindings_a": cfg.source_a.model_dump(),
         "bindings_b": cfg.source_b.model_dump(),
+        "uploaded_files": {
+            "a": {"bucket": storage_s3.bucket_name(), "key": key_a},
+            "b": {"bucket": storage_s3.bucket_name(), "key": key_b},
+        },
     }
     storage.save_job(job_id, _clean(initial_payload))
 
