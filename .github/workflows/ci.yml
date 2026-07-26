@@ -35,6 +35,8 @@ jobs:
       - run: pip install -r requirements.txt -r requirements-dev.txt
       - name: Run Alembic migrations
         run: alembic upgrade head
+      - name: Verify no ORM/migration schema drift
+        run: alembic check
       - name: Unit tests
         run: python -m pytest -q
       - name: Eval (snapshot + synthetic corrections)
