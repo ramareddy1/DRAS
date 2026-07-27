@@ -49,3 +49,23 @@ def test_delete_object_removes_it():
 
     with pytest.raises(ClientError):
         client.get_object(Bucket="reconops-test-bucket", Key=key)
+
+
+@mock_aws
+def test_delete_prefix_removes_only_that_accounts_objects():
+    from app import storage_s3
+
+    client = boto3.client("s3", region_name="us-east-1")
+    client.create_bucket(Bucket="reconops-test-bucket")
+    key_a1 = storage_s3.upload_key_for("acc-a", "job-1", "a", "orders.csv")
+    key_a2 = storage_s3.upload_key_for("acc-a", "job-2", "b", "payments.csv")
+    key_b1 = storage_s3.upload_key_for("acc-b", "job-1", "a", "orders.csv")
+    storage_s3.put_object(key_a1, b"a1")
+    storage_s3.put_object(key_a2, b"a2")
+    storage_s3.put_object(key_b1, b"b1")
+
+    storage_s3.delete_prefix("acc-a")
+
+    listing = client.list_objects_v2(Bucket="reconops-test-bucket", Prefix="accounts/acc-a/")
+    assert listing.get("KeyCount", 0) == 0
+    client.get_object(Bucket="reconops-test-bucket", Key=key_b1)  # untouched, raises if missing

@@ -41,3 +41,16 @@ def put_object(key: str, data: bytes) -> None:
 
 def delete_object(key: str) -> None:
     _client().delete_object(Bucket=bucket_name(), Key=key)
+
+
+def delete_prefix(account_id: str) -> None:
+    """Delete every object under accounts/{account_id}/ — used for a full
+    account purge, since one account's uploads span every job it has ever
+    run."""
+    client = _client()
+    prefix = f"accounts/{account_id}/"
+    paginator = client.get_paginator("list_objects_v2")
+    for page in paginator.paginate(Bucket=bucket_name(), Prefix=prefix):
+        keys = [{"Key": obj["Key"]} for obj in page.get("Contents", [])]
+        if keys:
+            client.delete_objects(Bucket=bucket_name(), Delete={"Objects": keys})
