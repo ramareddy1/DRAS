@@ -65,3 +65,14 @@ def test_decisions_carry_user_identity(client):
     entries = list(decision_log.replay(acc["id"]))
     assert entries[-1].user_email == "who@x.co"
     assert entries[-1].user_id
+
+
+def test_owner_can_update_retention_days(client):
+    _login(client, "owner2@x.co")
+    acc = client.post("/api/accounts", json={}).json()
+    h = {"X-Account-Id": acc["id"]}
+
+    r = client.patch("/api/accounts/me/profile", json={"retention_days": 30}, headers=h)
+
+    assert r.status_code == 200
+    assert r.json()["profile"]["retention_days"] == 30

@@ -83,3 +83,24 @@ def test_deleting_account_cascades_to_jobs():
 
     with session_scope() as s:
         assert s.get(JobORM, "j1") is None
+
+
+def test_cleanup_honors_per_account_retention_days():
+    from datetime import datetime, timedelta
+    from app import storage
+    from app.memory import accounts
+
+    short = accounts.create_account()
+    accounts.update_profile(short.id, {"retention_days": 1})
+    long_ = accounts.create_account()  # default retention_days=7
+
+    three_days_ago = (datetime.utcnow() - timedelta(days=3)).isoformat() + "Z"
+    storage.save_job("short-old", {"job_id": "short-old", "account_id": short.id,
+                                    "created_at": three_days_ago, "status": "complete"})
+    storage.save_job("long-old", {"job_id": "long-old", "account_id": long_.id,
+                                   "created_at": three_days_ago, "status": "complete"})
+
+    storage.cleanup()
+
+    assert storage.load_job("short-old") is None    # 3 days > short's 1-day retention
+    assert storage.load_job("long-old") is not None  # 3 days < long's 7-day default

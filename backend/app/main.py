@@ -187,7 +187,7 @@ def patch_profile(payload: dict, account: Account = Depends(require_owner)):
     """Update per-account settings (tolerances, materiality thresholds)."""
     allowed = {k: (payload or {}).get(k) for k in
                ("time_zone", "amount_tolerance_abs", "amount_tolerance_pct",
-                "materiality_abs", "materiality_pct")}
+                "materiality_abs", "materiality_pct", "retention_days")}
     try:
         return accounts_memory.update_profile(account.id, allowed)
     except Exception as e:

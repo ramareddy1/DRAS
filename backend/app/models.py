@@ -13,6 +13,10 @@ class AccountProfile(BaseModel):
     # Materiality: what counts as a "major" discrepancy for THIS brand.
     materiality_abs: float = 100.0
     materiality_pct: float = 0.03
+    # How long completed jobs (and their uploaded files) are kept before
+    # storage.cleanup() deletes them. Bounded so the retention promise stays
+    # meaningful in both directions.
+    retention_days: int = Field(default=7, ge=1, le=365)
     # Phase 4 will add: custom_fee_rates, known_source_labels, etc.
 
 

@@ -7,7 +7,7 @@ from typing import Any, Dict, Optional
 from .db.base import session_scope
 from .db.models import JobORM
 
-JOB_TTL_SECONDS = 7 * 24 * 3600
+DEFAULT_RETENTION_DAYS = 7
 
 _JOB_COLUMNS = {"account_id", "created_at", "status"}
 
@@ -113,13 +113,33 @@ def reap_stale_jobs() -> int:
 
 
 def cleanup() -> None:
-    """Delete jobs older than JOB_TTL_SECONDS, and their S3 uploads if any."""
+    """Delete jobs older than each account's retention_days (falls back to
+    DEFAULT_RETENTION_DAYS if the account has no override or no longer
+    exists), and their S3 uploads if any."""
     from . import storage_s3
+    from .memory import accounts as accounts_memory
 
-    cutoff = (datetime.utcnow() - timedelta(seconds=JOB_TTL_SECONDS)).isoformat() + "Z"
+    now = datetime.utcnow()
+    retention_cache: Dict[Optional[str], int] = {}
+
+    def _retention_days(account_id: Optional[str]) -> int:
+        if account_id not in retention_cache:
+            acc = accounts_memory.load_account(account_id) if account_id else None
+            retention_cache[account_id] = acc.profile.retention_days if acc else DEFAULT_RETENTION_DAYS
+        return retention_cache[account_id]
+
     with session_scope() as s:
-        rows = s.query(JobORM).filter(JobORM.created_at < cutoff).all()
+        rows = s.query(JobORM).all()
         for row in rows:
+            if not row.created_at:
+                continue
+            try:
+                created = datetime.fromisoformat(row.created_at.rstrip("Z"))
+            except ValueError:
+                continue
+            cutoff = now - timedelta(days=_retention_days(row.account_id))
+            if created >= cutoff:
+                continue
             uploaded = (row.payload or {}).get("uploaded_files") or {}
             for side in ("a", "b"):
                 key = (uploaded.get(side) or {}).get("key")

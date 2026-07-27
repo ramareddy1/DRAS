@@ -37,3 +37,13 @@ def test_account_exists():
     acc = accounts.create_account()
     assert accounts.account_exists(acc.id) is True
     assert accounts.account_exists("00000000-0000-4000-8000-000000000000") is False
+
+
+def test_account_profile_retention_days_default_and_bounds():
+    from pydantic import ValidationError
+
+    assert models.AccountProfile().retention_days == 7
+    with pytest.raises(ValidationError):
+        models.AccountProfile(retention_days=0)
+    with pytest.raises(ValidationError):
+        models.AccountProfile(retention_days=366)
