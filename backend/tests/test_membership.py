@@ -1,6 +1,8 @@
 import importlib
 
+import boto3
 import pytest
+from moto import mock_aws
 
 
 @pytest.fixture()
@@ -65,3 +67,34 @@ def test_legacy_account_claim_once(client):
     _login(client, "intruder@x.co")
     assert client.post("/api/accounts/claim",
                        json={"account_id": legacy.id}).status_code == 409
+
+
+@mock_aws
+def test_delete_account_endpoint_owner_only_and_scrubs_membership_index(client, monkeypatch):
+    monkeypatch.setenv("RECONOPS_S3_BUCKET", "reconops-test-bucket")
+    monkeypatch.setenv("RECONOPS_S3_REGION", "us-east-1")
+    monkeypatch.delenv("RECONOPS_S3_ENDPOINT_URL", raising=False)
+    monkeypatch.setenv("RECONOPS_S3_ACCESS_KEY_ID", "testing")
+    monkeypatch.setenv("RECONOPS_S3_SECRET_ACCESS_KEY", "testing")
+    boto3.client("s3", region_name="us-east-1").create_bucket(Bucket="reconops-test-bucket")
+
+    _login(client, "owner@x.co")
+    acc = client.post("/api/accounts", json={}).json()
+    h = {"X-Account-Id": acc["id"]}
+    client.post("/api/accounts/me/members", json={"email": "analyst@x.co"}, headers=h)
+
+    client.post("/api/auth/logout")
+    _login(client, "analyst@x.co")
+    assert client.delete("/api/accounts/me", headers=h).status_code == 403
+
+    client.post("/api/auth/logout")
+    _login(client, "owner@x.co")
+    assert client.delete("/api/accounts/me", headers=h).status_code == 200
+
+    me_owner = client.get("/api/auth/me").json()
+    assert me_owner["accounts"] == []
+
+    client.post("/api/auth/logout")
+    _login(client, "analyst@x.co")
+    me_analyst = client.get("/api/auth/me").json()
+    assert me_analyst["accounts"] == []

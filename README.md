@@ -134,7 +134,8 @@ Both run in CI on every push, plus production image builds.
 | POST | `/api/auth/request-code` · `/verify` · `/logout`, GET `/me` | Email-OTP sign-in, cookie sessions |
 | POST | `/api/accounts` · `/api/accounts/claim` | Create workspace / claim a legacy one |
 | GET/POST | `/api/accounts/me/members` | Team + roles (owner/analyst) |
-| PATCH | `/api/accounts/me/profile` | Tolerances & materiality (owner) |
+| PATCH | `/api/accounts/me/profile` | Tolerances, materiality & retention (owner) |
+| DELETE | `/api/accounts/me` | Full, irreversible workspace purge (owner) |
 | POST | `/api/preview` · `/api/upload` | Column preview / run a reconciliation |
 | GET | `/api/jobs` · `/api/status/{id}` · `/api/results/{id}` | History & results |
 | POST | `/api/results/{id}/export-token` → GET `.../export?token=` | Tokenized Excel download |
