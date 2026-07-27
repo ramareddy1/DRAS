@@ -43,6 +43,7 @@ DRAS/
 ├── docker-compose.prod.yml  Production stack (see docs/DEPLOY.md)
 └── docs/
     ├── DEPLOY.md            VPS runbook
+    ├── DATA_GOVERNANCE.md   Data flow, subprocessors, retention/DPA template
     └── plans/               Executed implementation plans
 ```
 
