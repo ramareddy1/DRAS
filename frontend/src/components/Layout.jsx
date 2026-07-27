@@ -122,6 +122,7 @@ export default function Layout() {
             <NavLink to="/observations" className={linkCls}>Observations</NavLink>
             <NavLink to="/metrics" className={linkCls}>Metrics</NavLink>
             <NavLink to="/history" className={linkCls}>History</NavLink>
+            <NavLink to="/settings" className={linkCls}>Settings</NavLink>
             {me && (
               <span className="ml-3 flex items-center gap-2">
                 <span className="text-[11px] text-blue-200 hidden sm:inline">{me.user.email}</span>

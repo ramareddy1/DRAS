@@ -19,6 +19,7 @@ import RulesPage from "./pages/RulesPage.jsx";
 import ObservationsPage from "./pages/ObservationsPage.jsx";
 import ComparePage from "./pages/ComparePage.jsx";
 import MetricsPage from "./pages/MetricsPage.jsx";
+import SettingsPage from "./pages/SettingsPage.jsx";
 import Layout from "./components/Layout.jsx";
 import { AuthGate } from "./auth.jsx";
 
@@ -36,6 +37,7 @@ ReactDOM.createRoot(document.getElementById("root")).render(
           <Route path="/rules" element={<RulesPage />} />
           <Route path="/observations" element={<ObservationsPage />} />
           <Route path="/metrics" element={<MetricsPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
           <Route path="/results/:id" element={<ResultsPage />} />
           <Route path="/results/:id/compare/:prevId" element={<ComparePage />} />
           <Route path="/history" element={<HistoryPage />} />

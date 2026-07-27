@@ -77,3 +77,10 @@ export async function accountFetch(input, init = {}) {
 export function currentAccountId() {
   return readStored();
 }
+
+/** Drop the cached workspace selection so the next ensureAccount() call
+ * re-resolves from scratch — used right after this workspace is deleted. */
+export function forgetAccount() {
+  clearStored();
+  _initPromise = null;
+}

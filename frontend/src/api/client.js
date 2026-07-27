@@ -72,6 +72,18 @@ export async function getMyAccount() {
   return handle(await accountFetch(`${BASE}/api/accounts/me`));
 }
 
+export async function updateProfile(partial) {
+  return handle(await accountFetch(`${BASE}/api/accounts/me/profile`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(partial),
+  }));
+}
+
+export async function deleteAccount() {
+  return handle(await accountFetch(`${BASE}/api/accounts/me`, { method: "DELETE" }));
+}
+
 export async function getJobs() {
   return handle(await accountFetch(`${BASE}/api/jobs`));
 }
