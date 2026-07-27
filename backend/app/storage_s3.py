@@ -46,7 +46,9 @@ def delete_object(key: str) -> None:
 def delete_prefix(account_id: str) -> None:
     """Delete every object under accounts/{account_id}/ — used for a full
     account purge, since one account's uploads span every job it has ever
-    run."""
+    run. Raises Exception if S3 reports any per-object errors during a
+    batch delete_objects call, rather than silently treating a partial
+    delete as success."""
     client = _client()
     prefix = f"accounts/{account_id}/"
     paginator = client.get_paginator("list_objects_v2")

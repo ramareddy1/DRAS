@@ -51,11 +51,13 @@ from .auth.routes import require_user, router as auth_router
 from .obs import RequestLogMiddleware, setup_logging, setup_sentry
 
 _retention_logger = logging.getLogger("reconops.retention")
+_accounts_logger = logging.getLogger("reconops.accounts")
 
 
 async def _retention_loop():
-    """Hourly enforcement of the 24h-uploads / 7d-results retention promise —
-    runs for the life of the server, independent of request traffic."""
+    """Hourly enforcement of each account's configurable retention window
+    (1-365 days, default 7) for jobs and their uploads — runs for the life
+    of the server, independent of request traffic."""
     while True:
         try:
             storage.cleanup()
@@ -199,9 +201,29 @@ def delete_account_endpoint(account: Account = Depends(require_owner)):
     """Full, irreversible purge: Postgres row (cascades to jobs, rules,
     triage items, decisions, metrics), S3 uploads, and all local JSON
     state for this workspace. Does not delete the caller's login — they
-    may belong to other workspaces."""
-    accounts_memory.delete_account(account.id)
-    members_store.remove_account(account.id)
+    may belong to other workspaces.
+
+    accounts_memory.delete_account deletes the Postgres row before purging
+    S3, so a failure partway through (e.g. a partial S3 delete_objects
+    failure) can leave the workspace row already gone while the global
+    membership index below is never scrubbed. Surface that as a clear,
+    retryable error instead of an uncaught 500 — delete_account is a
+    documented no-op on retry against an already-deleted row.
+    """
+    try:
+        accounts_memory.delete_account(account.id)
+        members_store.remove_account(account.id)
+    except Exception:
+        _accounts_logger.exception(
+            "Account purge failed partway through for account_id=%s", account.id,
+        )
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Workspace deletion failed partway through; contact support "
+                "or retry — some data may already be deleted."
+            ),
+        )
     return {"ok": True}
 
 

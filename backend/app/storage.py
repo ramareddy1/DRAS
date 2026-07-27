@@ -1,11 +1,14 @@
 """Postgres-backed job storage for the pilot."""
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta
 from typing import Any, Dict, Optional
 
 from .db.base import session_scope
 from .db.models import JobORM
+
+logger = logging.getLogger("reconops.storage")
 
 DEFAULT_RETENTION_DAYS = 7
 
@@ -136,6 +139,11 @@ def cleanup() -> None:
             try:
                 created = datetime.fromisoformat(row.created_at.rstrip("Z"))
             except ValueError:
+                logger.warning(
+                    "cleanup: job %s has unparseable created_at=%r; skipping "
+                    "retention check for this job (it will never be aged out)",
+                    row.job_id, row.created_at,
+                )
                 continue
             cutoff = now - timedelta(days=_retention_days(row.account_id))
             if created >= cutoff:
