@@ -53,4 +53,6 @@ def delete_prefix(account_id: str) -> None:
     for page in paginator.paginate(Bucket=bucket_name(), Prefix=prefix):
         keys = [{"Key": obj["Key"]} for obj in page.get("Contents", [])]
         if keys:
-            client.delete_objects(Bucket=bucket_name(), Delete={"Objects": keys})
+            response = client.delete_objects(Bucket=bucket_name(), Delete={"Objects": keys})
+            if "Errors" in response and response["Errors"]:
+                raise Exception(f"Partial delete failure for account {account_id}: {response['Errors']}")
