@@ -10,6 +10,7 @@ The pilot has no auth beyond the UUID/session pairing set up in Phase 2.1.
 from __future__ import annotations
 
 import re
+import shutil
 from typing import Optional
 
 from ..models import Account, AccountProfile
@@ -61,3 +62,22 @@ def account_exists(account_id: str) -> bool:
         return False
     with session_scope() as s:
         return s.get(AccountORM, account_id) is not None
+
+
+def delete_account(account_id: str) -> None:
+    """Full purge of one workspace: the Postgres row (cascades to jobs,
+    rules, triage items, decisions, and metrics via ON DELETE CASCADE), its
+    S3 uploads, and its local JSON directory (members.json, learned
+    aliases, observations, notes). Does not touch the global membership
+    index (see app.auth.members.remove_account) or users.json/sessions.json
+    (user-level state, not account-scoped)."""
+    from .. import storage_s3
+    from ..config import data_dir
+
+    with account_lock(account_id):
+        with session_scope() as s:
+            row = s.get(AccountORM, account_id)
+            if row is not None:
+                s.delete(row)
+        storage_s3.delete_prefix(account_id)
+    shutil.rmtree(data_dir() / "accounts" / account_id, ignore_errors=True)

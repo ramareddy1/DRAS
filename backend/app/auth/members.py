@@ -59,3 +59,20 @@ def accounts_for_user(user_id: str) -> List[dict]:
         if role:
             out.append({"account_id": aid, "role": role})
     return out
+
+
+def remove_account(account_id: str) -> None:
+    """Scrub account_id from the global user -> accounts index. Called
+    after the account's own members.json has already been deleted (full
+    account purge) — this only touches the reverse index, not
+    members.json, so it has no ordering dependency on that deletion."""
+    with named_lock("auth"):
+        ip = _index_path()
+        index = _load(ip)
+        changed = False
+        for user_id, account_ids in index.items():
+            if account_id in account_ids:
+                index[user_id] = [a for a in account_ids if a != account_id]
+                changed = True
+        if changed:
+            atomic_write_json(ip, index, indent=2)
