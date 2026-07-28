@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getMe, getMyAccount, updateProfile, deleteAccount } from "../api/client.js";
+import { getMe, getMyAccount, updateProfile, deleteAccount, getConnections, connectShopify, deleteConnection } from "../api/client.js";
 import { currentAccountId, forgetAccount } from "../account.js";
 
 export default function SettingsPage() {
@@ -15,6 +15,12 @@ export default function SettingsPage() {
   const [confirmText, setConfirmText] = useState("");
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState("");
+  const [connections, setConnections] = useState([]);
+  const [shopDomain, setShopDomain] = useState("");
+  const [accessToken, setAccessToken] = useState("");
+  const [connecting, setConnecting] = useState(false);
+  const [connectError, setConnectError] = useState("");
+  const [disconnecting, setDisconnecting] = useState(false);
 
   useEffect(() => {
     // Fetched independently (not Promise.all) so a getMyAccount() failure —
@@ -37,6 +43,10 @@ export default function SettingsPage() {
       })
       .catch((e) => setError(e.message))
       .finally(() => setMeLoaded(true));
+
+    getConnections()
+      .then(setConnections)
+      .catch(() => setConnections([]));
   }, []);
 
   const saveRetention = async () => {
@@ -66,10 +76,36 @@ export default function SettingsPage() {
     }
   };
 
+  const doConnectShopify = async () => {
+    setConnecting(true);
+    setConnectError("");
+    try {
+      const conn = await connectShopify({ shop_domain: shopDomain, access_token: accessToken });
+      setConnections((prev) => [...prev.filter((c) => c.provider !== "shopify"), conn]);
+      setShopDomain(""); setAccessToken("");
+    } catch (e) {
+      setConnectError(e.message);
+    } finally {
+      setConnecting(false);
+    }
+  };
+
+  const doDisconnectShopify = async () => {
+    setDisconnecting(true);
+    try {
+      await deleteConnection("shopify");
+      setConnections((prev) => prev.filter((c) => c.provider !== "shopify"));
+    } finally {
+      setDisconnecting(false);
+    }
+  };
+
   // getMe() failing means isOwner can't be determined at all (no membership
   // to act as owner of), so that's the one case left as a plain fatal error.
   if (error) return <div className="text-bad">Error: {error}</div>;
   if (!meLoaded || !accountLoaded) return <div className="text-slate-500">Loading…</div>;
+
+  const shopifyConn = connections.find((c) => c.provider === "shopify");
 
   return (
     <div className="max-w-2xl">
@@ -117,7 +153,66 @@ export default function SettingsPage() {
         </div>
       )}
 
-      {isOwner && (
+            <section className="mb-8 bg-white border border-slate-200 rounded-lg p-4">
+        <h2 className="text-sm font-semibold text-slate-700 mb-2">Integrations</h2>
+        {shopifyConn ? (
+          <div className="text-sm">
+            <div className="text-slate-700">
+              Connected to <span className="font-medium">{shopifyConn.shop_domain}</span>
+              {shopifyConn.status === "error" && (
+                <span className="text-bad ml-2">— needs reconnect</span>
+              )}
+            </div>
+            <div className="text-xs text-slate-500 mt-1">
+              Last synced: {shopifyConn.last_synced_at || "Never"}
+            </div>
+            {isOwner && (
+              <button
+                onClick={doDisconnectShopify}
+                disabled={disconnecting}
+                className="mt-2 text-xs px-3 py-1.5 rounded bg-bad text-white hover:opacity-90 disabled:opacity-50"
+              >
+                {disconnecting ? "Disconnecting…" : "Disconnect"}
+              </button>
+            )}
+          </div>
+        ) : isOwner ? (
+          <div>
+            <p className="text-xs text-slate-500 mb-3">
+              Paste an Admin API access token from a Custom App in your Shopify
+              Admin (Settings → Apps and sales channels → Develop apps).
+            </p>
+            <div className="flex flex-col gap-2 max-w-sm">
+              <input
+                type="text"
+                placeholder="yourstore.myshopify.com"
+                value={shopDomain}
+                onChange={(e) => setShopDomain(e.target.value)}
+                className="border border-slate-300 rounded px-2 py-1 text-sm"
+              />
+              <input
+                type="password"
+                placeholder="Admin API access token"
+                value={accessToken}
+                onChange={(e) => setAccessToken(e.target.value)}
+                className="border border-slate-300 rounded px-2 py-1 text-sm"
+              />
+              <button
+                onClick={doConnectShopify}
+                disabled={connecting || !shopDomain || !accessToken}
+                className="text-xs px-3 py-1.5 rounded bg-brand text-white hover:opacity-90 disabled:opacity-50 self-start"
+              >
+                {connecting ? "Connecting…" : "Connect"}
+              </button>
+            </div>
+            {connectError && <p className="text-xs text-bad mt-2">{connectError}</p>}
+          </div>
+        ) : (
+          <p className="text-xs text-slate-400">Not connected. Only the workspace owner can connect Shopify.</p>
+        )}
+      </section>
+
+{isOwner && (
         <section className="bg-white border border-bad rounded-lg p-4">
           <h2 className="text-sm font-semibold text-bad mb-2">Danger zone</h2>
           <p className="text-xs text-slate-600 mb-3">

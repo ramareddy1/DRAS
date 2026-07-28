@@ -126,6 +126,21 @@ export async function revokeRule(ruleId) {
   return post(`/api/rules/${ruleId}/revoke`);
 }
 
+// Connections (Shopify, etc.)
+export async function getConnections() {
+  return handle(await accountFetch(`${BASE}/api/connections`));
+}
+export async function connectShopify({ shop_domain, access_token }) {
+  return handle(await accountFetch(`${BASE}/api/connections/shopify`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ shop_domain, access_token }),
+  }));
+}
+export async function deleteConnection(provider) {
+  return handle(await accountFetch(`${BASE}/api/connections/${provider}`, { method: "DELETE" }));
+}
+
 // Decisions (rationale drawer)
 export async function recordDecision(payload) {
   return post(`/api/decisions`, payload);
