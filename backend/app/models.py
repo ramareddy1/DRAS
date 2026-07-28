@@ -321,3 +321,15 @@ class ReconcileResult(BaseModel):
     # v3 additions:
     bindings_a: Optional[BindingSet] = None
     bindings_b: Optional[BindingSet] = None
+
+
+class Connection(BaseModel):
+    """A third-party integration connection (Shopify, etc). Never carries
+    the access token — connections_store.get_decrypted_token() is the only
+    path to the raw credential."""
+    id: str
+    provider: str
+    status: Literal["connected", "error"] = "connected"
+    shop_domain: str
+    connected_at: Optional[str] = None
+    last_synced_at: Optional[str] = None

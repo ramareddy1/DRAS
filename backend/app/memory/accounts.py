@@ -66,7 +66,8 @@ def account_exists(account_id: str) -> bool:
 
 def delete_account(account_id: str) -> None:
     """Full purge of one workspace: the Postgres row (cascades to jobs,
-    rules, triage items, decisions, and metrics via ON DELETE CASCADE), its
+    rules, triage items, decisions, metrics, and connections via ON DELETE
+    CASCADE), its
     S3 uploads, and its local JSON directory (members.json, learned
     aliases, observations, notes). Does not touch the global membership
     index (see app.auth.members.remove_account) or users.json/sessions.json

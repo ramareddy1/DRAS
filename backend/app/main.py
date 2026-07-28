@@ -199,7 +199,7 @@ def patch_profile(payload: dict, account: Account = Depends(require_owner)):
 @app.delete("/api/accounts/me")
 def delete_account_endpoint(account: Account = Depends(require_owner)):
     """Full, irreversible purge: Postgres row (cascades to jobs, rules,
-    triage items, decisions, metrics), S3 uploads, and all local JSON
+    triage items, decisions, metrics, connections), S3 uploads, and all local JSON
     state for this workspace. Does not delete the caller's login — they
     may belong to other workspaces.
 
