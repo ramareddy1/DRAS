@@ -47,6 +47,18 @@ def test_connect_requires_owner(client, monkeypatch):
     assert r.status_code == 403
 
 
+def test_disconnect_requires_owner(client, monkeypatch):
+    acc = _account(client, "owner@x.co")
+    client.post("/api/accounts/me/members", json={"email": "analyst@x.co"},
+                headers={"X-Account-Id": acc["id"]})
+    client.post("/api/auth/logout")
+    _login(client, "analyst@x.co")
+    h = {"X-Account-Id": acc["id"]}
+
+    r = client.delete("/api/connections/shopify", headers=h)
+    assert r.status_code == 403
+
+
 def test_connect_rejects_bad_domain(client):
     acc = _account(client)
     h = {"X-Account-Id": acc["id"]}
@@ -144,6 +156,24 @@ def test_orders_returns_csv(client, monkeypatch):
     assert r.status_code == 200
     assert r.headers["content-type"].startswith("text/csv")
     assert "#1" in r.text
+
+
+def test_orders_502_on_decryption_failure(client, monkeypatch):
+    acc = _account(client)
+    h = {"X-Account-Id": acc["id"]}
+    from app.integrations import shopify, connections_store
+    monkeypatch.setattr(shopify, "validate_credentials", lambda *a, **k: None)
+    client.post("/api/connections/shopify",
+                json={"shop_domain": "test-shop.myshopify.com", "access_token": "tok"}, headers=h)
+
+    def _raise(*a, **k):
+        raise ValueError("bad token")
+    monkeypatch.setattr(connections_store, "get_decrypted_token", _raise)
+
+    r = client.post("/api/connections/shopify/orders",
+                     json={"start_date": "2026-01-01", "end_date": "2026-01-31"},
+                     headers=h)
+    assert r.status_code == 502
 
 
 def test_connections_are_account_isolated(client, monkeypatch):

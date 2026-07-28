@@ -66,7 +66,12 @@ def pull_shopify_orders(payload: dict, account: Account = Depends(require_accoun
     if (end - start) > timedelta(days=MAX_RANGE_DAYS):
         raise HTTPException(status_code=400, detail=f"Date range cannot exceed {MAX_RANGE_DAYS} days.")
 
-    access_token = connections_store.get_decrypted_token(account.id, "shopify")
+    try:
+        access_token = connections_store.get_decrypted_token(account.id, "shopify")
+    except (ValueError, KeyError):
+        connections_store.mark_error(account.id, "shopify")
+        raise HTTPException(status_code=502,
+                             detail="Shopify rejected the stored credential — reconnect your store.")
     try:
         df = shopify.fetch_orders(conn.shop_domain, access_token, start, end)
     except shopify.ShopifyAuthError:
