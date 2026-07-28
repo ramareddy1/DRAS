@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { fetchShopifyOrders } from "../api/client.js";
 
 export default function ShopifyFetchPanel({ onFetched }) {
@@ -7,19 +7,26 @@ export default function ShopifyFetchPanel({ onFetched }) {
   const [endDate, setEndDate] = useState(today);
   const [fetching, setFetching] = useState(false);
   const [error, setError] = useState("");
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   const doFetch = async () => {
     setFetching(true);
     setError("");
     try {
       const blob = await fetchShopifyOrders({ start_date: startDate, end_date: endDate });
+      if (!mountedRef.current) return;
       const filename = `shopify-orders-${startDate}_${endDate}.csv`;
       const file = new File([blob], filename, { type: "text/csv" });
       onFetched(file);
     } catch (e) {
-      setError(e.message);
+      if (mountedRef.current) setError(e.message);
     } finally {
-      setFetching(false);
+      if (mountedRef.current) setFetching(false);
     }
   };
 
