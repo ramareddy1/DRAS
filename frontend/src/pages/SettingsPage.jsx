@@ -153,7 +153,7 @@ export default function SettingsPage() {
         </div>
       )}
 
-            <section className="mb-8 bg-white border border-slate-200 rounded-lg p-4">
+      <section className="mb-8 bg-white border border-slate-200 rounded-lg p-4">
         <h2 className="text-sm font-semibold text-slate-700 mb-2">Integrations</h2>
         {shopifyConn ? (
           <div className="text-sm">
@@ -212,7 +212,7 @@ export default function SettingsPage() {
         )}
       </section>
 
-{isOwner && (
+      {isOwner && (
         <section className="bg-white border border-bad rounded-lg p-4">
           <h2 className="text-sm font-semibold text-bad mb-2">Danger zone</h2>
           <p className="text-xs text-slate-600 mb-3">
