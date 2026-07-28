@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import DropZone from "../components/DropZone.jsx";
 import ColumnMapper from "../components/ColumnMapper.jsx";
-import { previewFile, submitReconciliation, getConcepts, getNotes } from "../api/client.js";
+import ShopifyFetchPanel from "../components/ShopifyFetchPanel.jsx";
+import { previewFile, submitReconciliation, getConcepts, getNotes, getConnections } from "../api/client.js";
 import { saveHistoryItem } from "../history.js";
 
 const RECON_TYPES = [
@@ -34,12 +35,18 @@ export default function UploadPage() {
   const [submitErr, setSubmitErr] = useState("");
   const [concepts, setConcepts] = useState([]);
   const [showOnboard, setShowOnboard] = useState(false);
+  const [hasShopify, setHasShopify] = useState(false);
+  const [useShopifyA, setUseShopifyA] = useState(false);
+  const [useShopifyB, setUseShopifyB] = useState(false);
 
   useEffect(() => {
     getConcepts().then(setConcepts).catch(() => setConcepts([]));
     getNotes()
       .then((d) => setShowOnboard((d.notes || []).length === 0))
       .catch(() => {});
+    getConnections()
+      .then((conns) => setHasShopify(conns.some((c) => c.provider === "shopify" && c.status === "connected")))
+      .catch(() => setHasShopify(false));
   }, []);
 
   async function handleFile(which, file) {
@@ -55,6 +62,16 @@ export default function UploadPage() {
     } catch (e) {
       setErr(e.message);
     }
+  }
+
+  function toggleShopify(which) {
+    const setUse = which === "a" ? setUseShopifyA : setUseShopifyB;
+    const setFile = which === "a" ? setFileA : setFileB;
+    const setPrev = which === "a" ? setPreviewA : setPreviewB;
+    const setBnd = which === "a" ? setBindingsA : setBindingsB;
+    const setErr = which === "a" ? setErrA : setErrB;
+    setUse((prev) => !prev);
+    setFile(null); setPrev(null); setBnd([]); setErr("");
   }
 
   const [labelA, labelB] = DEFAULT_LABELS[reconType];
@@ -146,10 +163,52 @@ export default function UploadPage() {
       <section className="mb-6">
         <h2 className="text-sm font-medium text-slate-700 mb-2">2. Upload files</h2>
         <div className="flex flex-col md:flex-row gap-4">
-          <DropZone label={`Source A — ${labelA}`} file={fileA} preview={previewA}
-            onFile={(f) => handleFile("a", f)} error={errA} />
-          <DropZone label={`Source B — ${labelB}`} file={fileB} preview={previewB}
-            onFile={(f) => handleFile("b", f)} error={errB} />
+          <div className="flex-1">
+            {useShopifyA ? (
+              <>
+                <div className="flex items-baseline justify-between mb-2">
+                  <h3 className="font-medium text-slate-700">Source A — {labelA}</h3>
+                  <button onClick={() => toggleShopify("a")} className="text-xs text-brand hover:underline">
+                    Upload a file instead
+                  </button>
+                </div>
+                <ShopifyFetchPanel onFetched={(f) => handleFile("a", f)} />
+              </>
+            ) : (
+              <>
+                <DropZone label={`Source A — ${labelA}`} file={fileA} preview={previewA}
+                  onFile={(f) => handleFile("a", f)} error={errA} />
+                {hasShopify && (
+                  <button onClick={() => toggleShopify("a")} className="text-xs text-brand hover:underline mt-1">
+                    or use Shopify orders
+                  </button>
+                )}
+              </>
+            )}
+          </div>
+          <div className="flex-1">
+            {useShopifyB ? (
+              <>
+                <div className="flex items-baseline justify-between mb-2">
+                  <h3 className="font-medium text-slate-700">Source B — {labelB}</h3>
+                  <button onClick={() => toggleShopify("b")} className="text-xs text-brand hover:underline">
+                    Upload a file instead
+                  </button>
+                </div>
+                <ShopifyFetchPanel onFetched={(f) => handleFile("b", f)} />
+              </>
+            ) : (
+              <>
+                <DropZone label={`Source B — ${labelB}`} file={fileB} preview={previewB}
+                  onFile={(f) => handleFile("b", f)} error={errB} />
+                {hasShopify && (
+                  <button onClick={() => toggleShopify("b")} className="text-xs text-brand hover:underline mt-1">
+                    or use Shopify orders
+                  </button>
+                )}
+              </>
+            )}
+          </div>
         </div>
       </section>
 

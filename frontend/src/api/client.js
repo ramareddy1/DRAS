@@ -141,6 +141,24 @@ export async function deleteConnection(provider) {
   return handle(await accountFetch(`${BASE}/api/connections/${provider}`, { method: "DELETE" }));
 }
 
+export async function fetchShopifyOrders({ start_date, end_date }) {
+  const res = await accountFetch(`${BASE}/api/connections/shopify/orders`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ start_date, end_date }),
+  });
+  if (!res.ok) {
+    let detail = res.statusText;
+    try {
+      detail = (await res.json()).detail || detail;
+    } catch {
+      // body wasn't JSON — fall back to statusText
+    }
+    throw new Error(detail);
+  }
+  return res.blob();
+}
+
 // Decisions (rationale drawer)
 export async function recordDecision(payload) {
   return post(`/api/decisions`, payload);
