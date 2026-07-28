@@ -45,6 +45,7 @@ services:
       - minio-init
     environment:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - RECONOPS_AUTH_DEV=${RECONOPS_AUTH_DEV:-1}
       - RECONOPS_DATABASE_URL=postgresql://reconops:reconops@postgres:5432/reconops
       - RECONOPS_S3_BUCKET=reconops-dev
       - RECONOPS_S3_REGION=us-east-1

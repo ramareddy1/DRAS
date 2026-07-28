@@ -51,21 +51,44 @@ DRAS/
 
 ## Quickstart (local dev)
 
-### 1. Backend
+### Option A — Docker Compose (simplest)
 
 ```bash
+docker compose up --build
+docker compose exec backend alembic upgrade head   # first run only — creates DB tables
+```
+
+This brings up Postgres, MinIO (S3-compatible object storage), the backend,
+and the frontend together. Open http://localhost:5173 and sign in with any
+email — the 6-digit code shows inline on the login screen (dev auth is on
+by default in `docker-compose.yml`). A workspace is created for you
+automatically.
+
+Optional: drop an `ANTHROPIC_API_KEY=sk-...` into a `.env` file in the repo
+root before starting to enable the capped AI review pass — without it,
+reconciliation still runs, just without that pass.
+
+### Option B — Backend/frontend natively, Postgres + MinIO via Docker
+
+```bash
+docker compose up -d postgres minio minio-init
 cd backend
 python -m venv .venv
 # Windows: .venv\Scripts\activate    macOS/Linux: source .venv/bin/activate
 pip install -r requirements.txt -r requirements-dev.txt
-cp .env.example .env       # set ANTHROPIC_API_KEY; set RECONOPS_AUTH_DEV=1
-RECONOPS_AUTH_DEV=1 uvicorn app.main:app --reload --port 8000
+cp .env.example .env
+# set ANTHROPIC_API_KEY, RECONOPS_AUTH_DEV=1, and the object storage vars:
+#   RECONOPS_S3_BUCKET=reconops-dev
+#   RECONOPS_S3_ENDPOINT_URL=http://localhost:9000
+#   RECONOPS_S3_ACCESS_KEY_ID=reconops
+#   RECONOPS_S3_SECRET_ACCESS_KEY=reconops123
+# (RECONOPS_DATABASE_URL's default already points at the Dockerized Postgres)
+alembic upgrade head       # first run only — creates DB tables
+uvicorn app.main:app --reload --port 8000
 ```
 
 `RECONOPS_AUTH_DEV=1` makes sign-in codes appear on the login screen instead
 of requiring SMTP — local only, never in production.
-
-### 2. Frontend
 
 ```bash
 cd frontend
@@ -91,7 +114,11 @@ genuine discrepancies).
 
 ### 4. Tests & eval
 
+Tests need a running Postgres (the dev container self-provisions a
+`reconops_test` database on first start):
+
 ```bash
+docker compose up -d postgres
 cd backend
 python -m pytest -q        # unit + endpoint tests
 python -m app.eval         # deterministic regression eval (exit 0 = pass)
@@ -156,14 +183,6 @@ Both run in CI on every push, plus production image builds.
 
 Data retention runs hourly (24h uploads / 7d results). See
 [PRODUCTIZATION_PLAN.md](PRODUCTIZATION_PLAN.md) for the full phase status.
-
----
-
-## Docker (dev)
-
-```bash
-docker compose up --build
-```
 
 ## Deploying (production)
 
