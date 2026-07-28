@@ -24,7 +24,12 @@ from app.db import models  # noqa: F401 — registers ORM classes on Base.metada
 
 
 @pytest.fixture(autouse=True)
-def _clean_db():
+def _clean_db(request):
+    # Skip database fixture for tests marked with no_db
+    if "no_db" in request.keywords:
+        yield
+        return
+    
     engine = get_engine()
     Base.metadata.create_all(engine)
     yield
