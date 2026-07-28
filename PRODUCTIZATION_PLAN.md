@@ -1475,8 +1475,13 @@ gate UI with dev-mode codes for local work.
 - **Done when:** no endpoint is reachable without a session; export links expire; decision log rows carry user identity. ✓ (all three test-enforced; E2E verified against a live server)
 
 ### 2.2 Postgres + object storage
-- SQLAlchemy models mirroring the existing Pydantic schemas (accounts, jobs, rules, triage items, decisions, metrics); Alembic migrations; a one-shot importer for existing JSON data. Uploaded files to S3-compatible storage with server-side encryption.
-- **Done when:** eval passes against Postgres-backed stores; `data/` contains nothing but local cache; deleting an account cascades.
+**Implemented** — see [docs/plans/2026-07-20-postgres-object-storage.md](docs/plans/2026-07-20-postgres-object-storage.md)
+(implementation plan). Delivered: SQLAlchemy models mirroring the existing
+Pydantic schemas (accounts, jobs, rules, triage items, decisions, metrics)
+with Alembic migrations; a one-shot importer for existing JSON data;
+uploaded files moved to S3-compatible object storage with server-side
+encryption.
+- **Done when:** eval passes against Postgres-backed stores; `data/` contains nothing but local cache; deleting an account cascades. ✓ (test-enforced: importer and cascade-delete tests)
 
 ### 2.3 Async job execution
 **Implemented** — see [docs/plans/2026-07-19-async-job-execution.md](docs/plans/2026-07-19-async-job-execution.md)
@@ -1504,14 +1509,39 @@ Frontend Sentry was scoped out (backend coverage satisfies the done-criterion).
 - **Done when:** a client can be onboarded on a URL you'd put in an email; an exception in production shows up in Sentry with a job ID. ✓ (pending only the local stack run-through after the next reboot)
 
 ### 2.5 Data governance packet
-- `DELETE /api/accounts/me` (full purge), configurable retention per account, and a one-page data-handling doc: data flow diagram, subprocessor list (Anthropic — API data not used for training), retention/deletion policy, plain-language DPA template, "decision support, not accounting advice" disclaimer.
-- **Done when:** you can answer a client's security questionnaire from the doc without improvising.
+**Implemented** — see [docs/plans/2026-07-26-data-governance.md](docs/plans/2026-07-26-data-governance.md)
+(implementation plan) and [docs/DATA_GOVERNANCE.md](docs/DATA_GOVERNANCE.md)
+(the client-facing doc). Delivered: `DELETE /api/accounts/me` full purge
+(owner-gated, cascades Postgres row + S3 objects); configurable per-account
+`retention_days` (1–365, default 7) enforced by the hourly retention loop;
+a one-page data-handling doc covering the data flow diagram, subprocessor
+list (Anthropic — API data not used for training; Sentry, error monitoring
+only), retention/deletion policy, and the "decision support, not accounting
+advice" disclaimer.
+- **Done when:** you can answer a client's security questionnaire from the doc without improvising. ✓
 
 ## Phase 3 — Go-to-market
 
 Also separate plans; sequenced after Phase 2.1–2.3.
 
-- **3.1 Integrations:** read-only Shopify app + Stripe Connect; scheduled weekly auto-pull → auto-reconcile → email. This is the retention moat; CSV upload remains the wedge for 3PL/supplier files.
+- **3.1 Integrations — Shopify connector: Implemented** — see
+  [docs/plans/2026-07-27-shopify-connections.md](docs/plans/2026-07-27-shopify-connections.md)
+  (implementation plan) and [docs/specs/2026-07-27-shopify-connections.md](docs/specs/2026-07-27-shopify-connections.md)
+  (spec). Delivered: one Fernet-encrypted Shopify Custom App connection per
+  `(account_id, provider)`, owner-gated connect/disconnect, member-readable
+  list; on-demand order pull (date range capped at 180 days, 429-retried
+  against Shopify's Admin API `2024-01`) mapped to ontology columns and
+  streamed as a CSV that flows through the existing, unmodified
+  upload/preview/bind/reconcile pipeline; Settings-page connect/disconnect UI
+  and an Upload-page toggle to fetch orders inline instead of dragging a
+  file. Stripe Connect and the scheduled weekly auto-pull → auto-reconcile →
+  email loop are **not yet built** — this delivered the on-demand connector
+  only, not the full retention-moat automation described below.
+  Known gap: the interactive frontend flows (Settings connect/disconnect,
+  Upload-page toggle) were verified by code review and a clean
+  `npm run build` only — no browser walkthrough has been performed in this
+  environment. Recommend a manual spot-check before relying on this with
+  real users.
 - **3.2 Report artifact:** white-label monthly-close PDF/email — "$X verified, $Y fees confirmed normal, N items need you (top item $Z)". Accountant-forwardable.
 - **3.3 Billing & quotas:** plans with included jobs/rows; per-account monthly LLM budget enforced at the `call_claude` chokepoint (usage log already exists); Stripe Billing.
 - **3.4 Insight-quality rubric:** scored checklist (cites $? names specific orders? actions ranked by impact?) run against eval outputs so "better insights" is measurable, not vibes.
