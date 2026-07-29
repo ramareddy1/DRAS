@@ -51,12 +51,27 @@ DRAS/
 
 ## Quickstart (local dev)
 
+**Prerequisites:** Docker Desktop (or another Docker Compose–compatible
+engine), running. For Option B you'll also need Python **3.11–3.13** (avoid
+3.14 for now — the pinned `psycopg2-binary`/`pandas`/`numpy` versions have
+no prebuilt wheels for it yet, which fails with a confusing
+`ModuleNotFoundError: No module named 'psycopg2._psycopg'` instead of a
+clear "unsupported version" error) and Node 20+.
+
 ### Option A — Docker Compose (simplest)
 
 ```bash
-docker compose up --build
-docker compose exec backend alembic upgrade head   # first run only — creates DB tables
+docker compose up --build -d postgres minio minio-init
+docker compose run --rm backend alembic upgrade head   # first run only — creates DB tables
+docker compose up --build -d
 ```
+
+The backend queries the database at startup, so on a genuinely fresh
+database it will crash and exit if you bring it up before migrations exist —
+`docker compose exec` then can't reach it, since that requires an
+already-running container. `docker compose run` sidesteps that by spinning
+up a one-off container just for the migration, regardless of the `backend`
+service's state.
 
 This brings up Postgres, MinIO (S3-compatible object storage), the backend,
 and the frontend together. Open http://localhost:5173 and sign in with any
@@ -77,12 +92,34 @@ python -m venv .venv
 # Windows: .venv\Scripts\activate    macOS/Linux: source .venv/bin/activate
 pip install -r requirements.txt -r requirements-dev.txt
 cp .env.example .env
-# set ANTHROPIC_API_KEY, RECONOPS_AUTH_DEV=1, and the object storage vars:
-#   RECONOPS_S3_BUCKET=reconops-dev
-#   RECONOPS_S3_ENDPOINT_URL=http://localhost:9000
-#   RECONOPS_S3_ACCESS_KEY_ID=reconops
-#   RECONOPS_S3_SECRET_ACCESS_KEY=reconops123
-# (RECONOPS_DATABASE_URL's default already points at the Dockerized Postgres)
+```
+
+Edit `backend/.env` and set:
+
+- `ANTHROPIC_API_KEY` (optional, see above) and `RECONOPS_AUTH_DEV=1`
+- the object storage vars, pointing at the Dockerized MinIO:
+  ```
+  RECONOPS_S3_BUCKET=reconops-dev
+  RECONOPS_S3_ENDPOINT_URL=http://localhost:9000
+  RECONOPS_S3_ACCESS_KEY_ID=reconops
+  RECONOPS_S3_SECRET_ACCESS_KEY=reconops123
+  ```
+- `RECONOPS_DATABASE_URL=postgresql://reconops:reconops@localhost:5432/reconops`
+  — the `.env.example` default. This only works if host port 5432 is
+  actually free. If something else on your machine is already listening
+  there (e.g. a native Postgres install), Docker's forwarded port will be
+  unreachable — see **Troubleshooting** below.
+
+**`alembic` does not read `.env`** — only `app.main` (via `python-dotenv`)
+does. Export the database URL directly in your shell before running Alembic
+(and later, `pytest`/`app.eval`), using the same value you put in `.env`:
+
+```bash
+# bash/zsh
+export RECONOPS_DATABASE_URL=postgresql://reconops:reconops@localhost:5432/reconops
+# PowerShell
+$env:RECONOPS_DATABASE_URL = "postgresql://reconops:reconops@localhost:5432/reconops"
+
 alembic upgrade head       # first run only — creates DB tables
 uvicorn app.main:app --reload --port 8000
 ```
@@ -99,7 +136,32 @@ npm run dev
 Open http://localhost:5173, sign in with any email (the 6-digit code shows
 inline in dev mode) — a workspace is created for you automatically.
 
-### 3. Demo data
+#### Troubleshooting: port 5432 already in use
+
+If Alembic or the backend can't reach Postgres — connection refused/timeout,
+`password authentication failed for user "reconops"` (it connected, but to
+the wrong Postgres), or `could not translate host name "postgres"` if you
+accidentally copied the in-container URL instead of the `localhost` one —
+something other than the Docker container is already bound to host port
+5432 — commonly a native
+Postgres install running as a Windows/macOS service. Docker can't share
+that port, so its forwarding silently fails. Fix it by remapping the
+container's host port with a git-ignored override file,
+`docker-compose.override.yml`, in the repo root:
+
+```yaml
+services:
+  postgres:
+    ports:
+      - "5433:5432"   # host:container — pick any free host port
+```
+
+Then swap every `localhost:5432` above for `localhost:5433` (in `.env` and
+in whatever you exported for Alembic), and re-run
+`docker compose up -d postgres`. `docker-compose.yml` itself stays
+untouched, so CI and other machines are unaffected.
+
+### Demo data
 
 | Recon type | Source A | Source B |
 |---|---|---|
@@ -112,17 +174,34 @@ mapper. For a real-world stress test, drop the Kaggle Olist dataset into
 `python samples/build_olist_pair.py` (20k orders, multi-payment vouchers,
 genuine discrepancies).
 
-### 4. Tests & eval
+### Tests & eval
 
-Tests need a running Postgres (the dev container self-provisions a
-`reconops_test` database on first start):
+Tests need a running Postgres **and a separate `reconops_test` database**.
+Unlike CI (whose Postgres service container is provisioned with
+`reconops_test` as its database directly), the local dev container's
+database is `reconops`, so `reconops_test` has to be created once by hand —
+nothing auto-provisions it:
 
 ```bash
 docker compose up -d postgres
+docker compose exec postgres createdb -U reconops reconops_test   # once, ever
 cd backend
+export RECONOPS_DATABASE_URL=postgresql://reconops:reconops@localhost:5432/reconops_test
+# PowerShell: $env:RECONOPS_DATABASE_URL = "postgresql://reconops:reconops@localhost:5432/reconops_test"
+
 python -m pytest -q        # unit + endpoint tests
 python -m app.eval         # deterministic regression eval (exit 0 = pass)
 ```
+
+`pytest` falls back to a hardcoded `localhost:5432/reconops_test` on its own
+if you forget to export it (see `backend/tests/conftest.py`) — `app.eval`
+has no such fallback and will fail with
+`RuntimeError: RECONOPS_DATABASE_URL is not set` if it's missing. If you
+remapped the port per the troubleshooting note above, that hardcoded
+fallback points at the wrong port (and, if something else answers 5432,
+fails with a `password authentication failed` error, not a connection
+error) — you must export `RECONOPS_DATABASE_URL` yourself for both
+`pytest` and `app.eval` in that case.
 
 Both run in CI on every push, plus production image builds.
 
