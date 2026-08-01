@@ -8,7 +8,7 @@ nothing ever queries by individual field.
 """
 from __future__ import annotations
 
-from sqlalchemy import Column, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import BigInteger, Column, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 
 from .base import Base
@@ -75,3 +75,32 @@ class ConnectionORM(Base):
     payload = Column(JSONB, nullable=False, default=dict)
 
     __table_args__ = (UniqueConstraint("account_id", "provider", name="uq_connection_account_provider"),)
+
+
+class RunORM(Base):
+    __tablename__ = "runs"
+
+    id = Column(String(36), primary_key=True)
+    account_id = Column(String(36), ForeignKey("accounts.id", ondelete="CASCADE"),
+                        nullable=False, index=True)
+    status = Column(String, nullable=False, default="pending", index=True)
+    created_at = Column(String, nullable=True, index=True)
+    payload = Column(JSONB, nullable=False, default=dict)
+
+
+class RunEventORM(Base):
+    __tablename__ = "run_events"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    run_id = Column(String(36), ForeignKey("runs.id", ondelete="CASCADE"),
+                    nullable=False, index=True)
+    account_id = Column(String(36), ForeignKey("accounts.id", ondelete="CASCADE"),
+                        nullable=False, index=True)
+    seq = Column(Integer, nullable=False)
+    type = Column(String, nullable=False, index=True)
+    payload = Column(JSONB, nullable=False, default=dict)
+    at = Column(String, nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("run_id", "seq", name="uq_run_event_run_seq"),
+    )

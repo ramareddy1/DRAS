@@ -1,6 +1,7 @@
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any, Literal
 from datetime import datetime
+from enum import Enum
 import uuid
 
 
@@ -333,3 +334,70 @@ class Connection(BaseModel):
     shop_domain: str
     connected_at: Optional[str] = None
     last_synced_at: Optional[str] = None
+
+
+# -----------------------------------------------------------------------------
+# Phase A: Agent runtime — runs and run events
+# -----------------------------------------------------------------------------
+
+
+class RunStatus(str, Enum):
+    pending = "pending"
+    running = "running"
+    suspended = "suspended"
+    done = "done"
+    failed = "failed"
+    aborted = "aborted"
+
+
+class AutonomyLevel(str, Enum):
+    observe = "observe"
+    assist = "assist"
+    auto = "auto"
+
+
+class RunEventType(str, Enum):
+    goal_received = "goal_received"
+    plan_proposed = "plan_proposed"
+    plan_approved = "plan_approved"
+    step_started = "step_started"
+    step_completed = "step_completed"
+    tool_called = "tool_called"
+    tool_returned = "tool_returned"
+    tool_failed = "tool_failed"
+    assistant_text = "assistant_text"
+    render = "render"
+    question_asked = "question_asked"
+    question_answered = "question_answered"
+    proposal_emitted = "proposal_emitted"
+    proposal_accepted = "proposal_accepted"
+    proposal_rejected = "proposal_rejected"
+    critic_check = "critic_check"
+    budget_exceeded = "budget_exceeded"
+    run_finished = "run_finished"
+
+
+class Run(BaseModel):
+    id: str
+    account_id: str
+    goal: Dict[str, Any] = Field(default_factory=dict)
+    status: RunStatus = RunStatus.pending
+    autonomy: AutonomyLevel = AutonomyLevel.assist
+    playbook_id: Optional[str] = None
+    budget: Dict[str, Any] = Field(default_factory=dict)
+    spend: Dict[str, Any] = Field(default_factory=dict)
+    suspended_on: Optional[int] = None
+    transcript: List[Dict[str, Any]] = Field(default_factory=list)
+    created_at: Optional[str] = None
+    ended_at: Optional[str] = None
+    error: Optional[str] = None
+
+
+class RunEvent(BaseModel):
+    id: Optional[int] = None
+    run_id: str
+    account_id: str
+    seq: int
+    type: RunEventType
+    payload: Dict[str, Any] = Field(default_factory=dict)
+    at: Optional[str] = None
