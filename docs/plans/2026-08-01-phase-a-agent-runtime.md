@@ -1131,7 +1131,11 @@ def downgrade() -> None:
 Run: `cd backend && .venv/Scripts/python -m pytest tests/test_agent_artifacts.py -v`
 Expected: PASS — all four tests.
 
-These need a reachable S3-compatible store. If `RECONOPS_S3_BUCKET` is unset locally, follow the skip pattern already used by the storage-backed tests in `tests/test_export_tokens.py` so behaviour stays consistent across the suite.
+**Mock S3 — do not depend on a live store.** CI runs no MinIO and sets no `RECONOPS_S3_*` variables, so `storage_s3.bucket_name()` (a plain `os.environ[...]`) raises `KeyError` and the tests error rather than skip. Follow the convention every other storage-touching test in this repo already uses: an autouse fixture that monkeypatches the `RECONOPS_S3_*` vars, plus moto's `@mock_aws` on each test, creating the bucket inside the mock. Copy the exact shape from `tests/test_storage_s3.py`, `tests/test_async_jobs.py`, or `tests/test_membership.py`.
+
+Moto intercepts at the botocore layer, so `put_dataset`/`get_dataset` still round-trip real bytes through the mocked store — the dtype-preservation assertion remains meaningful.
+
+Note: against a *real* MinIO, `put_object`'s unconditional `ServerSideEncryption="AES256"` fails with "KMS not configured" on recent releases unless the server has a KMS backend (`MINIO_KMS_SECRET_KEY`). That is a local-dev environment concern, not a code change.
 
 - [ ] **Step 8: Verify the migration round-trips**
 
