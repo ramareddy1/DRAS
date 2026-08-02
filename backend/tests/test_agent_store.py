@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 import uuid
 
 import pytest
@@ -105,3 +106,53 @@ def test_suspend_records_the_pending_question(account_id):
     loaded = store.load_run(run.id, account_id)
     assert loaded.status is RunStatus.suspended
     assert loaded.suspended_on == q.id
+
+
+def test_concurrent_append_event_does_not_collide_on_seq(account_id):
+    """Regression test for UniqueConstraint("run_id", "seq").
+
+    `append_event` computes `next_seq = max(seq) + 1` and then inserts.
+    Without locking the parent `runs` row for the duration of that
+    read-then-insert, concurrent appends to the SAME run can read the same
+    max(seq), both attempt to insert the same seq, and the loser gets an
+    IntegrityError from the database — silently dropping an event. This
+    test spawns several threads that genuinely contend (via a Barrier) to
+    append events to one run concurrently and asserts every append
+    succeeds with a contiguous, gap-free, duplicate-free seq sequence.
+    """
+    run = store.create_run(
+        account_id=account_id, goal={}, autonomy=AutonomyLevel.assist, budget={},
+    )
+
+    n_threads = 8
+    barrier = threading.Barrier(n_threads)
+    results = []
+    errors = []
+    lock = threading.Lock()
+
+    def worker(i: int) -> None:
+        try:
+            barrier.wait()  # maximize contention: all threads race together
+            event = store.append_event(
+                run=run, type=RunEventType.tool_called, payload={"i": i},
+            )
+            with lock:
+                results.append(event)
+        except Exception as exc:  # pragma: no cover - failure path
+            with lock:
+                errors.append(exc)
+
+    threads = [threading.Thread(target=worker, args=(i,)) for i in range(n_threads)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert errors == [], f"append_event raised in {len(errors)} thread(s): {errors}"
+    assert len(results) == n_threads
+
+    seqs = [e.seq for e in results]
+    assert sorted(seqs) == list(range(n_threads)), (
+        f"expected contiguous seqs 0..{n_threads - 1} with no duplicates/"
+        f"gaps, got {sorted(seqs)}"
+    )
