@@ -731,6 +731,14 @@ def append_event(
     *, run: Run, type: RunEventType, payload: Dict[str, Any],
 ) -> RunEvent:
     with session_scope() as s:
+        # Serialize appends for this run. Without this lock two concurrent
+        # appends read the same max(seq) and collide on
+        # UniqueConstraint("run_id", "seq"), losing one event to an
+        # IntegrityError. Every append for a run goes through here, so
+        # locking the parent row is sufficient.
+        s.execute(
+            select(RunORM.id).where(RunORM.id == run.id).with_for_update()
+        )
         next_seq = s.scalar(
             select(func.coalesce(func.max(RunEventORM.seq), -1) + 1)
             .where(RunEventORM.run_id == run.id)
