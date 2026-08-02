@@ -33,7 +33,7 @@ def _isolate_registry_state():
 
 def test_registry_serializes_sorted_by_name():
     """Prompt caching is a byte-exact prefix match (spec 2.5)."""
-    names = [t.__name__ for t in registry.tier1_tools()]
+    names = [t.name for t in registry.tier1_tools()]
     assert names == sorted(names)
 
 
@@ -43,7 +43,7 @@ def test_serialization_is_byte_stable_across_calls():
 
 def test_every_registered_tool_declares_an_effect():
     for tool in registry.tier1_tools():
-        assert registry.effect_of(tool.__name__) in set(Effect)
+        assert registry.effect_of(tool.name) in set(Effect)
 
 
 def test_read_tools_run_freely_at_assist():
