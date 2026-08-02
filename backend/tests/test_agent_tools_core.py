@@ -89,6 +89,27 @@ def test_profile_schema_caps_samples_regardless_of_row_count(run_ctx):
 
 
 @mock_aws
+def test_profile_schema_truncates_long_sample_values(run_ctx):
+    boto3.client("s3", region_name="us-east-1").create_bucket(Bucket="reconops-test-bucket")
+    long_value = "x" * 100
+    df = pd.DataFrame({"note": [long_value]})
+    ds = artifacts.put_dataset(
+        run_id=run_ctx.run_id, account_id=run_ctx.account_id,
+        df=df, label="notes",
+    )
+    out = tools_core.profile_schema(ds)
+
+    col = next(c for c in out["columns"] if c["name"] == "note")
+    assert col["samples"], "expected at least one sample for the long value"
+    for sample in col["samples"]:
+        assert len(sample) <= tools_core.MAX_SAMPLE_CHARS
+
+    truncated = col["samples"][0]
+    assert long_value.startswith(truncated)
+    assert len(truncated) < len(long_value)
+
+
+@mock_aws
 def test_bind_columns_returns_mappings_not_rows(run_ctx):
     boto3.client("s3", region_name="us-east-1").create_bucket(Bucket="reconops-test-bucket")
     ds = artifacts.put_dataset(

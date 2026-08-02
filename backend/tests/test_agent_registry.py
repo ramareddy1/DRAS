@@ -6,6 +6,14 @@ from app.agent_runtime import registry
 from app.agent_runtime.registry import Effect
 from app.models import AutonomyLevel
 
+# Imported for its import-time side effect: every @register(...) decorated
+# tool in tools_core registers itself into the module-global registry on
+# import. Without this import, running this file in isolation (e.g.
+# `pytest tests/test_agent_registry.py`) leaves the registry empty and the
+# name/effect assertions below would loop zero times and pass vacuously.
+# Do not remove even though nothing here calls it directly.
+from app.agent_runtime import tools_core  # noqa: F401
+
 
 @pytest.fixture(autouse=True)
 def _isolate_registry_state():
@@ -33,7 +41,9 @@ def _isolate_registry_state():
 
 def test_registry_serializes_sorted_by_name():
     """Prompt caching is a byte-exact prefix match (spec 2.5)."""
-    names = [t.name for t in registry.tier1_tools()]
+    tools = registry.tier1_tools()
+    assert len(tools) > 0, "registry is empty — did the tools_core import get removed?"
+    names = [t.name for t in tools]
     assert names == sorted(names)
 
 
@@ -42,7 +52,9 @@ def test_serialization_is_byte_stable_across_calls():
 
 
 def test_every_registered_tool_declares_an_effect():
-    for tool in registry.tier1_tools():
+    tools = registry.tier1_tools()
+    assert len(tools) > 0, "registry is empty — did the tools_core import get removed?"
+    for tool in tools:
         assert registry.effect_of(tool.name) in set(Effect)
 
 
