@@ -73,5 +73,3 @@ def test_unknown_tool_is_gated_rather_than_allowed():
     assert registry.requires_gate("not_a_real_tool", AutonomyLevel.auto) is True
 
 
-    """Verify fixture isolates state: create_rule should not exist (registered by earlier test)."""
-
