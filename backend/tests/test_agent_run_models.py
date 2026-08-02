@@ -67,11 +67,14 @@ def test_run_events_are_ordered_by_monotonic_id():
             select(RunEventORM).where(RunEventORM.run_id == run_id)
             .order_by(RunEventORM.id)
         ))
-    assert [r.type for r in rows] == [
+        observed = [(r.type, r.id) for r in rows]
+
+    assert [t for t, _ in observed] == [
         "goal_received", "plan_proposed", "tool_called",
     ]
-    assert [r.id for r in rows] == sorted(r.id for r in rows)
-    assert rows[0].id < rows[1].id < rows[2].id
+    ids = [i for _, i in observed]
+    assert ids == sorted(ids)
+    assert ids[0] < ids[1] < ids[2]
 
 
 def test_run_event_model_validates_payload():

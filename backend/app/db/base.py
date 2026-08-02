@@ -35,14 +35,7 @@ def get_engine():
     global _engine, _SessionLocal
     if _engine is None:
         _engine = create_engine(_database_url(), pool_pre_ping=True, future=True)
-        # expire_on_commit=False: session_scope() commits and closes the
-        # session at the end of every `with` block, including read-only
-        # ones. With the default expire_on_commit=True, that commit expires
-        # every attribute on every object touched in the session; accessing
-        # them afterwards (as callers legitimately do with query results
-        # returned from inside a `with session_scope()` block) then raises
-        # DetachedInstanceError because the session is already closed.
-        _SessionLocal = sessionmaker(bind=_engine, future=True, expire_on_commit=False)
+        _SessionLocal = sessionmaker(bind=_engine, future=True)
     return _engine
 
 
