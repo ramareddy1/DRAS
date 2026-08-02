@@ -104,3 +104,15 @@ class RunEventORM(Base):
     __table_args__ = (
         UniqueConstraint("run_id", "seq", name="uq_run_event_run_seq"),
     )
+
+
+class RunArtifactORM(Base):
+    __tablename__ = "run_artifacts"
+
+    id = Column(String(36), primary_key=True)
+    run_id = Column(String(36), ForeignKey("runs.id", ondelete="CASCADE"),
+                    nullable=False, index=True)
+    account_id = Column(String(36), ForeignKey("accounts.id", ondelete="CASCADE"),
+                        nullable=False, index=True)
+    kind = Column(String, nullable=False, default="dataset", index=True)
+    payload = Column(JSONB, nullable=False, default=dict)

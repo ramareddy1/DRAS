@@ -401,3 +401,16 @@ class RunEvent(BaseModel):
     type: RunEventType
     payload: Dict[str, Any] = Field(default_factory=dict)
     at: Optional[str] = None
+
+
+class RunArtifact(BaseModel):
+    id: str
+    run_id: str
+    account_id: str
+    kind: str = "dataset"
+    label: str = ""
+    storage_key: str
+    schema_fingerprint: Dict[str, Any] = Field(default_factory=dict)
+    row_count: int = 0
+    columns: List[str] = Field(default_factory=list)
+    created_at: Optional[str] = None

@@ -39,6 +39,12 @@ def put_object(key: str, data: bytes) -> None:
     )
 
 
+def get_object(key: str) -> bytes:
+    """Read one object's bytes. Raises botocore ClientError if absent."""
+    response = _client().get_object(Bucket=bucket_name(), Key=key)
+    return response["Body"].read()
+
+
 def delete_object(key: str) -> None:
     _client().delete_object(Bucket=bucket_name(), Key=key)
 
