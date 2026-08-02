@@ -35,7 +35,11 @@ def upload_key_for(account_id: str, job_id: str, side: str, filename: str) -> st
 
 def put_object(key: str, data: bytes) -> None:
     _client().put_object(
-        Bucket=bucket_name(), Key=key, Body=data, ServerSideEncryption="AES256",
+        Bucket=bucket_name(), Key=key, Body=data,
+        # AES256 SSE is required on AWS S3. S3-compatible stores (e.g. MinIO)
+        # 400 on this unless a KMS backend is configured; local dev sets
+        # MINIO_KMS_SECRET_KEY to satisfy it.
+        ServerSideEncryption="AES256",
     )
 
 

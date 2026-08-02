@@ -3,13 +3,24 @@ from __future__ import annotations
 
 import uuid
 
+import boto3
 import pandas as pd
 import pytest
+from moto import mock_aws
 
 from app.agent_runtime import artifacts, store
 from app.db.base import session_scope
 from app.db.models import AccountORM
 from app.models import AutonomyLevel
+
+
+@pytest.fixture(autouse=True)
+def _s3_env(monkeypatch):
+    monkeypatch.setenv("RECONOPS_S3_BUCKET", "reconops-test-bucket")
+    monkeypatch.setenv("RECONOPS_S3_REGION", "us-east-1")
+    monkeypatch.delenv("RECONOPS_S3_ENDPOINT_URL", raising=False)
+    monkeypatch.setenv("RECONOPS_S3_ACCESS_KEY_ID", "testing")
+    monkeypatch.setenv("RECONOPS_S3_SECRET_ACCESS_KEY", "testing")
 
 
 @pytest.fixture()
@@ -35,7 +46,9 @@ def _frame() -> pd.DataFrame:
     })
 
 
+@mock_aws
 def test_dataset_round_trips_with_dtypes_intact(run, account_id):
+    boto3.client("s3", region_name="us-east-1").create_bucket(Bucket="reconops-test-bucket")
     dataset_id = artifacts.put_dataset(
         run_id=run.id, account_id=account_id, df=_frame(), label="orders",
     )
@@ -43,7 +56,9 @@ def test_dataset_round_trips_with_dtypes_intact(run, account_id):
     pd.testing.assert_frame_equal(loaded, _frame())
 
 
+@mock_aws
 def test_get_dataset_is_account_scoped(run, account_id):
+    boto3.client("s3", region_name="us-east-1").create_bucket(Bucket="reconops-test-bucket")
     dataset_id = artifacts.put_dataset(
         run_id=run.id, account_id=account_id, df=_frame(), label="orders",
     )
@@ -55,8 +70,10 @@ def test_get_dataset_is_account_scoped(run, account_id):
         artifacts.get_dataset(dataset_id=dataset_id, account_id=other)
 
 
+@mock_aws
 def test_describe_is_bounded_and_carries_no_row_data(run, account_id):
     """Tool returns cross the model boundary — they carry no rows (spec 2.1)."""
+    boto3.client("s3", region_name="us-east-1").create_bucket(Bucket="reconops-test-bucket")
     dataset_id = artifacts.put_dataset(
         run_id=run.id, account_id=account_id, df=_frame(), label="orders",
     )
@@ -70,8 +87,10 @@ def test_describe_is_bounded_and_carries_no_row_data(run, account_id):
     assert "20.25" not in serialized
 
 
+@mock_aws
 def test_storage_key_sits_under_the_account_purge_prefix(run, account_id):
     """delete_prefix purges accounts/{id}/ — artifacts must be inside it."""
+    boto3.client("s3", region_name="us-east-1").create_bucket(Bucket="reconops-test-bucket")
     dataset_id = artifacts.put_dataset(
         run_id=run.id, account_id=account_id, df=_frame(), label="orders",
     )
