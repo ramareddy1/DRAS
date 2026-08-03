@@ -136,3 +136,50 @@ def test_from_dict_with_explicit_none_usd_cap_yields_unlimited():
     spend = Spend()
     spend.record_llm(10.0)  # Spend $10
     assert exceeded(b, spend) is None
+
+
+def test_spend_round_trips_counts_across_a_process_boundary():
+    """A resumed run must not reset its caps.
+
+    `started_at` is process-local monotonic, so a resumed process cannot
+    reuse it. What must survive is the accumulated cost: tool calls, usd,
+    and elapsed compute time.
+    """
+    spend = Spend(tool_calls=7, usd=0.12)
+    restored = Spend.from_dict(spend.to_dict())
+
+    assert restored.tool_calls == 7
+    assert restored.usd == 0.12
+
+
+def test_from_dict_carries_prior_elapsed_forward():
+    spend = Spend(tool_calls=1, accumulated_s=45.0)
+    restored = Spend.from_dict(spend.to_dict())
+
+    # Prior compute time is preserved; the new local clock starts at ~0.
+    assert restored.elapsed_s() >= 45.0
+    assert restored.elapsed_s() < 46.0
+
+
+def test_suspended_time_does_not_count_against_the_wall_clock():
+    """Spec decision 3: the cap measures agent compute, not human latency.
+
+    A run suspended for an hour and then approved must resume with its
+    wall-clock budget intact — otherwise every gated run trips
+    `budget_exceeded` the instant it is approved.
+    """
+    budget = Budget(wall_clock_s=120)
+    spend = Spend(tool_calls=1, accumulated_s=30.0)
+    persisted = spend.to_dict()
+
+    # ... an hour of human deliberation passes; a new process resumes ...
+    restored = Spend.from_dict(persisted)
+
+    assert exceeded(budget, restored) is None
+
+
+def test_from_dict_defaults_are_safe_on_a_missing_key():
+    restored = Spend.from_dict({})
+    assert restored.tool_calls == 0
+    assert restored.usd == 0.0
+    assert restored.elapsed_s() < 1.0

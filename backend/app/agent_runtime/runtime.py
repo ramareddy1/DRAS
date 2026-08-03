@@ -154,6 +154,7 @@ def _would_exceed(budget: Budget, spend: Spend) -> Optional[str]:
         tool_calls=spend.tool_calls + 1,
         usd=spend.usd,
         started_at=spend.started_at,
+        accumulated_s=spend.accumulated_s,
     )
     return exceeded(budget, probe)
 

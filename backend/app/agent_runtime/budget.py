@@ -44,6 +44,7 @@ class Spend:
     tool_calls: int = 0
     usd: float = 0.0
     started_at: float = field(default_factory=time.monotonic)
+    accumulated_s: float = 0.0
 
     def record_tool_call(self) -> None:
         self.tool_calls += 1
@@ -52,7 +53,14 @@ class Spend:
         self.usd += usd
 
     def elapsed_s(self) -> float:
-        return time.monotonic() - self.started_at
+        """Compute time across every segment of this run.
+
+        `started_at` measures only the current process. A run that suspended
+        on a gate and resumed elsewhere carries its prior segments in
+        `accumulated_s`, so the wall-clock cap keeps measuring agent work
+        rather than restarting at zero each time (spec decision 3).
+        """
+        return self.accumulated_s + (time.monotonic() - self.started_at)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -60,6 +68,21 @@ class Spend:
             "usd": round(self.usd, 6),
             "elapsed_s": round(self.elapsed_s(), 3),
         }
+
+    @staticmethod
+    def from_dict(d: Dict[str, Any]) -> "Spend":
+        """Rehydrate spend for a resumed run.
+
+        `started_at` is deliberately NOT restored: it is process-local
+        monotonic, so a value from the suspending process is meaningless
+        here. The elapsed total moves into `accumulated_s` and the local
+        clock restarts, which is what excludes suspended time from the cap.
+        """
+        return Spend(
+            tool_calls=int(d.get("tool_calls", 0)),
+            usd=float(d.get("usd", 0.0)),
+            accumulated_s=float(d.get("elapsed_s", 0.0)),
+        )
 
 
 def exceeded(budget: Budget, spend: Spend) -> Optional[str]:
