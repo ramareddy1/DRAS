@@ -53,6 +53,18 @@ def _payouts():
     })
 
 
+def test_runtime_module_imports_the_macro_tool():
+    """runtime.py's tools_macro import is what registers run_reconciliation.
+
+    Without it the tool silently never reaches the model — no error, no
+    failing test. Assert on runtime's namespace rather than registry
+    contents, which other test modules pollute.
+    """
+    from app.agent_runtime import runtime, tools_macro
+
+    assert getattr(runtime, "tools_macro", None) is tools_macro
+
+
 def test_macro_tool_is_registered_as_a_write(run_ctx):
     assert effect_of("run_reconciliation") is Effect.write
 
