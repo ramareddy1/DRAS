@@ -68,6 +68,18 @@ class FakeDriver:
         return self._turns.pop(0)
 
 
+class LoopingDriver:
+    """Never stops asking for tools — drives the iteration cap."""
+
+    def __init__(self, turn):
+        self._turn = turn
+        self.turns_served = 0
+
+    def next_turn(self, *, system, messages, tools, task_budget_tokens):
+        self.turns_served += 1
+        return self._turn
+
+
 @pytest.fixture()
 def account_id() -> str:
     acct = str(uuid.uuid4())
@@ -138,8 +150,14 @@ def test_transcript_is_persisted_for_resume(account_id):
     runtime.execute_run(run_id=run.id, account_id=account_id, driver=driver)
 
     reloaded = store.load_run(run.id, account_id)
-    assert len(reloaded.transcript) >= 2
-    assert reloaded.transcript[0]["role"] == "user"
+    # Exactly the goal turn and the model's reply — nothing else is mirrored.
+    assert len(reloaded.transcript) == 2
+    assert reloaded.transcript[0] == {"role": "user", "content": "test"}
+    assert reloaded.transcript[1] == {
+        "role": "assistant",
+        "content": [{"type": "text", "text": "hello"}],
+    }
+    assert reloaded.spend["tool_calls"] == 0
 
 
 @mock_aws
@@ -159,12 +177,50 @@ def test_observe_mode_suspends_before_running_a_read_tool(account_id):
     )
 
     assert result.status is RunStatus.suspended
-    assert result.suspended_on is not None
-    types = [e.type for e in store.events_since(
-        run_id=run.id, account_id=account_id,
-    )]
+    events = store.events_since(run_id=run.id, account_id=account_id)
+    types = [e.type for e in events]
     assert RunEventType.question_asked in types
     assert RunEventType.tool_returned not in types
+    # The pointer has to name the question the user is being asked, not just
+    # be set: resume reads the run back through this id.
+    question = next(e for e in events if e.type == RunEventType.question_asked)
+    assert result.suspended_on == question.id
+    assert question.payload["tool"] == "profile_schema"
+
+
+@mock_aws
+def test_a_gated_call_blocks_every_call_in_the_same_turn(account_id):
+    """Suspension is all-or-nothing per turn (no orphaned tool_use blocks)."""
+    boto3.client("s3", region_name="us-east-1").create_bucket(Bucket="reconops-test-bucket")
+    run = _make_run(account_id, autonomy=AutonomyLevel.assist)
+    ds = _dataset(run, account_id)
+    driver = FakeDriver([
+        Turn(text=None, tool_calls=[
+            # A read that would run unattended in assist mode...
+            ToolCall(id="t1", name="profile_schema", input={"dataset_id": ds}),
+            # ...followed by an unregistered tool, which gates (fail closed).
+            ToolCall(id="t2", name="post_to_slack", input={"text": "hi"}),
+        ]),
+    ])
+
+    result = runtime.execute_run(
+        run_id=run.id, account_id=account_id, driver=driver,
+    )
+
+    assert result.status is RunStatus.suspended
+    events = store.events_since(run_id=run.id, account_id=account_id)
+    types = [e.type for e in events]
+    assert RunEventType.question_asked in types
+    # Nothing in the turn ran — not even the read that precedes the gate.
+    assert RunEventType.tool_called not in types
+    assert RunEventType.tool_returned not in types
+    question = next(e for e in events if e.type == RunEventType.question_asked)
+    assert question.payload["tool"] == "post_to_slack"
+    assert result.suspended_on == question.id
+    # The saved transcript ends on the assistant turn; both tool_use blocks
+    # are unanswered together, which is what makes the run resumable.
+    assert result.transcript[-1]["role"] == "assistant"
+    assert [b["id"] for b in result.transcript[-1]["content"]] == ["t1", "t2"]
 
 
 @mock_aws
@@ -209,10 +265,41 @@ def test_tool_call_cap_stops_the_run(account_id):
     )
 
     assert result.status is RunStatus.aborted
-    types = [e.type for e in store.events_since(
-        run_id=run.id, account_id=account_id,
-    )]
+    events = store.events_since(run_id=run.id, account_id=account_id)
+    types = [e.type for e in events]
     assert RunEventType.budget_exceeded in types
+    # A hard cap of 1 means exactly one tool call ran. Counting the status
+    # alone would pass even if the cap overshot by a whole batch.
+    called = [e for e in events if e.type == RunEventType.tool_called]
+    assert len(called) == 1
+    assert result.spend["tool_calls"] == 1
+
+
+@mock_aws
+def test_tool_call_cap_stops_mid_turn_not_after_the_batch(account_id):
+    """One turn asking for three calls under a cap of 1 runs exactly one."""
+    boto3.client("s3", region_name="us-east-1").create_bucket(Bucket="reconops-test-bucket")
+    run = _make_run(account_id, budget={"tool_call_cap": 1})
+    ds = _dataset(run, account_id)
+    driver = FakeDriver([
+        Turn(text=None, tool_calls=[
+            ToolCall(id=f"t{i}", name="profile_schema",
+                     input={"dataset_id": ds})
+            for i in range(3)
+        ]),
+    ])
+
+    result = runtime.execute_run(
+        run_id=run.id, account_id=account_id, driver=driver,
+    )
+
+    assert result.status is RunStatus.aborted
+    events = store.events_since(run_id=run.id, account_id=account_id)
+    called = [e for e in events if e.type == RunEventType.tool_called]
+    returned = [e for e in events if e.type == RunEventType.tool_returned]
+    assert len(called) == 1
+    assert len(returned) == 1
+    assert RunEventType.budget_exceeded in [e.type for e in events]
 
 
 def test_failing_tool_emits_tool_failed_and_continues(account_id):
@@ -234,6 +321,120 @@ def test_failing_tool_emits_tool_failed_and_continues(account_id):
         run_id=run.id, account_id=account_id,
     )]
     assert RunEventType.tool_failed in types
+
+
+@mock_aws
+def test_both_abort_paths_persist_the_transcript_and_spend(account_id):
+    """An aborted run must not disagree with its own event log."""
+    from app.agent_runtime import critic
+
+    boto3.client("s3", region_name="us-east-1").create_bucket(Bucket="reconops-test-bucket")
+
+    # Path 1: the budget cap.
+    budget_run = _make_run(account_id, budget={"tool_call_cap": 1})
+    ds = _dataset(budget_run, account_id)
+    call = ToolCall(id="t", name="profile_schema", input={"dataset_id": ds})
+    runtime.execute_run(
+        run_id=budget_run.id, account_id=account_id,
+        driver=FakeDriver([
+            Turn(text=None, tool_calls=[call]),
+            Turn(text=None, tool_calls=[call]),
+        ]),
+    )
+    reloaded = store.load_run(budget_run.id, account_id)
+    assert reloaded.status is RunStatus.aborted
+    assert reloaded.transcript, "budget abort dropped the transcript"
+    assert reloaded.transcript[0]["role"] == "user"
+    assert reloaded.spend["tool_calls"] == 1
+
+    # Path 2: a failed post-condition. Registered only now so the run above
+    # is unaffected; _isolate_critic_state undoes it after the test.
+    critic.register_check("profile_schema", lambda out: "synthetic failure")
+    critic_run = _make_run(account_id)
+    ds2 = _dataset(critic_run, account_id)
+    runtime.execute_run(
+        run_id=critic_run.id, account_id=account_id,
+        driver=FakeDriver([
+            Turn(text="looking", tool_calls=[
+                ToolCall(id="c1", name="profile_schema",
+                         input={"dataset_id": ds2}),
+            ]),
+        ]),
+    )
+    reloaded = store.load_run(critic_run.id, account_id)
+    assert reloaded.status is RunStatus.aborted
+    assert reloaded.transcript, "critic abort dropped the transcript"
+    assert reloaded.transcript[0]["role"] == "user"
+    assert reloaded.spend["tool_calls"] == 1
+
+
+def test_iteration_exhaustion_aborts_rather_than_reporting_done(
+    account_id, monkeypatch,
+):
+    """A run cut off mid-work is not a finished run."""
+    monkeypatch.setattr(runtime, "MAX_ITERATIONS", 3)
+    run = _make_run(account_id)
+    driver = LoopingDriver(Turn(text=None, tool_calls=[
+        ToolCall(id="t1", name="profile_schema",
+                 input={"dataset_id": "does-not-exist"}),
+    ]))
+
+    result = runtime.execute_run(
+        run_id=run.id, account_id=account_id, driver=driver,
+    )
+
+    assert result.status is RunStatus.aborted
+    assert driver.turns_served == 3
+    types = [e.type for e in store.events_since(
+        run_id=run.id, account_id=account_id,
+    )]
+    assert RunEventType.run_finished not in types
+    assert RunEventType.budget_exceeded in types
+    assert "iteration cap" in result.error
+    assert result.transcript, "iteration abort dropped the transcript"
+
+
+def test_execute_run_refuses_a_finished_run(account_id):
+    """Re-invoking a terminal run would restart it and duplicate its log."""
+    run = _make_run(account_id)
+    finished = runtime.execute_run(
+        run_id=run.id, account_id=account_id,
+        driver=FakeDriver([Turn(text="ok", tool_calls=[])]),
+    )
+    assert finished.status is RunStatus.done
+
+    with pytest.raises(ValueError) as err:
+        runtime.execute_run(
+            run_id=run.id, account_id=account_id,
+            driver=FakeDriver([Turn(text="again", tool_calls=[])]),
+        )
+    assert run.id in str(err.value)
+    assert "done" in str(err.value)
+
+    events = store.events_since(run_id=run.id, account_id=account_id)
+    goals = [e for e in events if e.type == RunEventType.goal_received]
+    assert len(goals) == 1
+    assert store.load_run(run.id, account_id).status is RunStatus.done
+
+
+def test_execute_run_refuses_a_suspended_run(account_id):
+    """Resume is a separate capability, never a silent restart."""
+    run = _make_run(account_id)
+    suspended = runtime.execute_run(
+        run_id=run.id, account_id=account_id,
+        driver=FakeDriver([Turn(text=None, tool_calls=[
+            ToolCall(id="t1", name="post_to_slack", input={"text": "hi"}),
+        ])]),
+    )
+    assert suspended.status is RunStatus.suspended
+
+    with pytest.raises(ValueError) as err:
+        runtime.execute_run(
+            run_id=run.id, account_id=account_id,
+            driver=FakeDriver([Turn(text="retry", tool_calls=[])]),
+        )
+    assert "suspended" in str(err.value)
+    assert store.load_run(run.id, account_id).status is RunStatus.suspended
 
 
 def test_system_prompt_puts_core_instructions_first(account_id):
