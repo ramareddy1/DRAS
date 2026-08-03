@@ -243,6 +243,26 @@ def _execute_calls(
     return out
 
 
+def _finish_run(
+    *, run: Run, account_id: str, messages: List[Dict[str, Any]],
+    spend: Spend, status: RunStatus, error: Optional[str],
+) -> Run:
+    """Persist a run's terminal transcript, spend, and status together.
+
+    Shared by every terminal path in `_drive` and by `resume_run`'s abort
+    branch, so a change to failure persistence has exactly one place to
+    happen — not one written once and hand-inlined a second time.
+    """
+    store.save_transcript(
+        run_id=run.id, account_id=account_id,
+        transcript=messages, spend=spend.to_dict(),
+    )
+    store.set_status(
+        run_id=run.id, account_id=account_id, status=status, error=error,
+    )
+    return store.load_run(run.id, account_id)
+
+
 def _drive(
     *, run: Run, account_id: str, messages: List[Dict[str, Any]],
     budget: Budget, spend: Spend, driver: Driver,
@@ -253,16 +273,6 @@ def _drive(
     turns. Both entry points hand it a `messages` list that already ends
     somewhere the model can continue from.
     """
-    def _finish(status: RunStatus, error: Optional[str]) -> Run:
-        store.save_transcript(
-            run_id=run.id, account_id=account_id,
-            transcript=messages, spend=spend.to_dict(),
-        )
-        store.set_status(
-            run_id=run.id, account_id=account_id, status=status, error=error,
-        )
-        return store.load_run(run.id, account_id)
-
     tools = registry.tier1_tools()
 
     for _ in range(MAX_ITERATIONS):
@@ -322,7 +332,10 @@ def _drive(
         )
         if executed.abort is not None:
             status, error = executed.abort
-            return _finish(status, error)
+            return _finish_run(
+                run=run, account_id=account_id, messages=messages,
+                spend=spend, status=status, error=error,
+            )
 
         messages.append({"role": "user", "content": executed.results})
 
@@ -334,7 +347,10 @@ def _drive(
                 run=run, type=RunEventType.budget_exceeded,
                 payload={"reason": reason},
             )
-            return _finish(RunStatus.aborted, reason)
+            return _finish_run(
+                run=run, account_id=account_id, messages=messages,
+                spend=spend, status=RunStatus.aborted, error=reason,
+            )
     else:
         # No `break`: the loop ran out of iterations while the model was
         # still asking for tools. The run is truncated mid-work, not
@@ -345,14 +361,20 @@ def _drive(
             run=run, type=RunEventType.budget_exceeded,
             payload={"reason": reason},
         )
-        return _finish(RunStatus.aborted, reason)
+        return _finish_run(
+            run=run, account_id=account_id, messages=messages,
+            spend=spend, status=RunStatus.aborted, error=reason,
+        )
 
     # Reached only via the `break` above: the model stopped calling tools.
     store.append_event(
         run=run, type=RunEventType.run_finished,
         payload={"spend": spend.to_dict()},
     )
-    return _finish(RunStatus.done, None)
+    return _finish_run(
+        run=run, account_id=account_id, messages=messages,
+        spend=spend, status=RunStatus.done, error=None,
+    )
 
 
 def execute_run(
@@ -474,10 +496,19 @@ def resume_run(
     budget = Budget.from_dict(run.budget)
     spend = Spend.from_dict(run.spend)
     messages: List[Dict[str, Any]] = list(run.transcript)
-    pending = _pending_calls(messages)
 
     token = set_run_context(RunContext(run_id=run.id, account_id=account_id))
     try:
+        # `_pending_calls` must run inside this `try`. The caller has
+        # already flipped the run to `running` via `claim_suspended` before
+        # calling this function, so a raise before this point would leave
+        # it stuck there: `claim_suspended` only ever claims a `suspended`
+        # run, so it can never pick this run up again, and `execute_run`
+        # refuses anything but `pending`/`running` — and for `running` it
+        # restarts from the goal, duplicating the event log. Failing loudly
+        # here still has to leave the run `failed` and observable, the way
+        # every other failure in this loop does.
+        pending = _pending_calls(messages)
         store.append_event(
             run=run, type=RunEventType.question_answered,
             payload={
@@ -494,15 +525,10 @@ def resume_run(
             )
             if executed.abort is not None:
                 status, error = executed.abort
-                store.save_transcript(
-                    run_id=run.id, account_id=account_id,
-                    transcript=messages, spend=spend.to_dict(),
+                return _finish_run(
+                    run=run, account_id=account_id, messages=messages,
+                    spend=spend, status=status, error=error,
                 )
-                store.set_status(
-                    run_id=run.id, account_id=account_id,
-                    status=status, error=error,
-                )
-                return store.load_run(run.id, account_id)
             results = executed.results
         else:
             denial = note or "The user declined this action."
@@ -532,7 +558,8 @@ def resume_run(
         if note:
             # Mid-conversation system message (spec 4.6). Legal only here:
             # it follows a user turn and is last. Opus 4.8 only — an
-            # unsupported model returns 400.
+            # unsupported model (including an `ANTHROPIC_MODEL` env
+            # override, which `AnthropicDriver` honors) returns 400.
             messages.append({"role": "system", "content": note})
 
         return _drive(
