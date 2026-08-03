@@ -38,11 +38,31 @@ The system message carries the user's prose; it does not do the structural work.
 
 **Decision 2's guard.** A rejected turn is exactly when the model is most likely to re-propose the same call, which would gate again and ping-pong. `MAX_ITERATIONS` and `tool_call_cap` bound the loop but are not a *good* stop — the run burns its budget on something the user already refused. So rejected `(tool_name, input)` pairs are recorded on the run, and an identical re-proposal aborts instead of gating a second time.
 
-## Bug this fixes on the way
+## Bugs this fixes on the way
+
+Both were found while planning, not while writing this design. Neither is reachable today; resume is what makes both reachable, so both are in scope here rather than deferred.
+
+### `Spend` cannot cross a process boundary
 
 `Spend.started_at` is `time.monotonic()` — process-local, arbitrary epoch. `to_dict()` serializes only the derived `elapsed_s`, and there is no `from_dict`. Decision 1 of the architecture spec says a run resumes in a *different process*, where a monotonic value from the original process is meaningless.
 
 The consequence is not just that resume cannot rehydrate spend — it is that a fresh `Spend()` resets `tool_calls` and `usd` to zero. The hard caps would silently become **per-segment instead of per-run**: suspend and resume in a loop and no cap ever trips. This must be fixed as part of resume regardless of the wall-clock decision.
+
+`_would_exceed` builds a throwaway `Spend` to probe the next call against the caps. That probe must carry `accumulated_s` too, or a resumed run under-reports elapsed time at exactly the moment the cap matters.
+
+### `_dispatch` cannot resolve the macro-tool
+
+`_dispatch` resolves a tool name with `getattr(tools_core, name, None)`, but `run_reconciliation` is defined in `tools_macro`. Verified against the live registry rather than by reading:
+
+```
+in tools_core?       False
+in registry._TOOLS?  True
+_TOOLS keys: ['bind_columns', 'match_datasets', 'profile_schema', 'run_reconciliation']
+```
+
+Approving a gated `run_reconciliation` therefore raises `KeyError: unknown tool`. It is latent only because that tool is `Effect.write`, so it gates at every autonomy level and never reaches dispatch — **resume is the first code path that gets past the gate**, which makes this a resume blocker rather than a cleanup.
+
+The fix routes dispatch through `registry.callable_for(name)`, the same source of truth the schemas are built from. That also closes the attribute-lookup hazard the existing code comment already flags as a follow-up: `getattr` on a module will happily return any public symbol, registered as a tool or not.
 
 ## Design
 
