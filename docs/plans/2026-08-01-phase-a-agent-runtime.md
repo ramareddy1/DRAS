@@ -79,7 +79,7 @@ The spec (§2.6) rests on two unverified assumptions. Prove them before anything
 - Consumes: nothing
 - Produces: a working `anthropic` with `client.beta.messages.tool_runner` and `@beta_tool`; `DEFAULT_MODEL == "claude-opus-4-8"`
 
-- [ ] **Step 1: Bump the SDK and verify the Tool Runner symbol exists**
+- [x] **Step 1: Bump the SDK and verify the Tool Runner symbol exists**
 
 ```bash
 cd backend
@@ -90,7 +90,7 @@ cd backend
 Expected: a version ≥ 0.116.0, `beta_tool ok`, `tool_runner ok`.
 If `MISSING`, stop and report — every later task depends on it.
 
-- [ ] **Step 2: Pin the resolved version in requirements.txt**
+- [x] **Step 2: Pin the resolved version in requirements.txt**
 
 Replace the `anthropic==0.39.0` line with the exact version printed in Step 1, e.g.:
 
@@ -98,7 +98,7 @@ Replace the `anthropic==0.39.0` line with the exact version printed in Step 1, e
 anthropic==0.116.0
 ```
 
-- [ ] **Step 3: Write the failing assumption test**
+- [x] **Step 3: Write the failing assumption test**
 
 Create `backend/tests/test_agent_sdk_assumptions.py`:
 
@@ -159,14 +159,14 @@ def test_raw_tool_definitions_mix_with_decorated_tools():
     assert tools[1]["name"] == "tool_search_tool_regex"
 ```
 
-- [ ] **Step 4: Run it and watch it fail on the model ID**
+- [x] **Step 4: Run it and watch it fail on the model ID**
 
 Run: `cd backend && .venv/Scripts/python -m pytest tests/test_agent_sdk_assumptions.py -v`
 Expected: `test_default_model_is_opus_4_8` FAILS (`claude-opus-4-7 != claude-opus-4-8`); the schema tests pass.
 
 If `to_dict()` raises `AttributeError`, the accessor differs in your SDK version — find the real one with `dir(_sample_tool)` and update all three schema tests. Record the correct accessor in the commit message; Task 5 uses it.
 
-- [ ] **Step 5: Fix the model ID**
+- [x] **Step 5: Fix the model ID**
 
 In `backend/app/llm.py:19`:
 
@@ -174,12 +174,12 @@ In `backend/app/llm.py:19`:
 DEFAULT_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-opus-4-8")
 ```
 
-- [ ] **Step 6: Run the whole suite for upgrade fallout**
+- [x] **Step 6: Run the whole suite for upgrade fallout**
 
 Run: `cd backend && .venv/Scripts/python -m pytest -q`
 Expected: all pass. The SDK jump spans many versions; `app/llm.py`'s three call sites (`call_claude`, `call_claude_json`, `_stub_response`) are the likely breakage points. Fix any failures in `llm.py` only — do not change tool or agent behaviour.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add backend/requirements.txt backend/app/llm.py backend/tests/test_agent_sdk_assumptions.py
@@ -204,7 +204,7 @@ git commit -m "chore: bump anthropic SDK, target claude-opus-4-8, guard tool-run
   - `app.db.models.RunORM` (table `runs`), `RunEventORM` (table `run_events`)
   - `RunStatus`, `AutonomyLevel`, `RunEventType` string enums
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `backend/tests/test_agent_run_models.py`:
 
@@ -303,12 +303,12 @@ def test_run_event_model_validates_payload():
     assert ev.payload["bound_count"] == 24
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `cd backend && .venv/Scripts/python -m pytest tests/test_agent_run_models.py -v`
 Expected: FAIL — `ImportError: cannot import name 'Run' from 'app.models'`
 
-- [ ] **Step 3: Add the Pydantic models**
+- [x] **Step 3: Add the Pydantic models**
 
 Append to `backend/app/models.py`:
 
@@ -377,7 +377,7 @@ class RunEvent(BaseModel):
 
 If `Enum`, `Dict`, `Any`, `List`, `Optional`, or `Field` are not already imported at the top of `models.py`, add them (`from enum import Enum`, `from typing import Any, Dict, List, Optional`, `from pydantic import BaseModel, Field`).
 
-- [ ] **Step 4: Add the ORM classes**
+- [x] **Step 4: Add the ORM classes**
 
 Append to `backend/app/db/models.py`. Note `BigInteger` and `DateTime` must be added to the `sqlalchemy` import line:
 
@@ -413,12 +413,12 @@ class RunEventORM(Base):
 
 `transcript` lives inside `RunORM.payload` per the ORM convention — it is never queried by field.
 
-- [ ] **Step 5: Run the test to verify it passes**
+- [x] **Step 5: Run the test to verify it passes**
 
 Run: `cd backend && .venv/Scripts/python -m pytest tests/test_agent_run_models.py -v`
 Expected: PASS (the autouse fixture calls `Base.metadata.create_all`, so tests do not need the migration).
 
-- [ ] **Step 6: Write the migration**
+- [x] **Step 6: Write the migration**
 
 Create `backend/alembic/versions/0008_runs.py`:
 
@@ -476,7 +476,7 @@ def downgrade() -> None:
     op.drop_table("runs")
 ```
 
-- [ ] **Step 7: Apply and roll back the migration**
+- [x] **Step 7: Apply and roll back the migration**
 
 ```bash
 cd backend
@@ -487,7 +487,7 @@ cd backend
 
 Expected: all three succeed with no error. This proves the migration is reversible.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add backend/app/models.py backend/app/db/models.py backend/alembic/versions/0008_runs.py backend/tests/test_agent_run_models.py
@@ -517,7 +517,7 @@ The only module that touches `runs` / `run_events`. Everything else goes through
 
 Every function takes `account_id` and filters on it. A run is never loaded by id alone.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `backend/tests/test_agent_store.py`:
 
@@ -631,12 +631,12 @@ def test_suspend_records_the_pending_question(account_id):
     assert loaded.suspended_on == q.id
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `cd backend && .venv/Scripts/python -m pytest tests/test_agent_store.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'app.agent_runtime'`
 
-- [ ] **Step 3: Create the package and the store**
+- [x] **Step 3: Create the package and the store**
 
 Create `backend/app/agent_runtime/__init__.py` as an empty file.
 
@@ -809,12 +809,12 @@ def set_status(
     _mutate(run_id, account_id, apply)
 ```
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `cd backend && .venv/Scripts/python -m pytest tests/test_agent_store.py -v`
 Expected: PASS — all six tests.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/app/agent_runtime/ backend/tests/test_agent_store.py
@@ -847,7 +847,7 @@ Decision 1 means a run resumes in a *different process*, so a `dataset_id` canno
   - `storage_key(*, dataset_id: str, account_id: str) -> str`
   - `app.storage_s3.get_object(key: str) -> bytes`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `backend/tests/test_agent_artifacts.py`:
 
@@ -933,12 +933,12 @@ def test_storage_key_sits_under_the_account_purge_prefix(run, account_id):
     assert key.startswith("accounts/" + account_id + "/")
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `cd backend && .venv/Scripts/python -m pytest tests/test_agent_artifacts.py -v`
 Expected: FAIL — `ImportError: cannot import name 'artifacts'`
 
-- [ ] **Step 3: Add pyarrow and the S3 read path**
+- [x] **Step 3: Add pyarrow and the S3 read path**
 
 Add to `backend/requirements.txt`:
 
@@ -957,7 +957,7 @@ def get_object(key: str) -> bytes:
     return response["Body"].read()
 ```
 
-- [ ] **Step 4: Add the RunArtifact model and ORM**
+- [x] **Step 4: Add the RunArtifact model and ORM**
 
 Append to `backend/app/models.py`:
 
@@ -990,7 +990,7 @@ class RunArtifactORM(Base):
     payload = Column(JSONB, nullable=False, default=dict)
 ```
 
-- [ ] **Step 5: Write the artifact store**
+- [x] **Step 5: Write the artifact store**
 
 Create `backend/app/agent_runtime/artifacts.py`:
 
@@ -1085,7 +1085,7 @@ def describe(*, dataset_id: str, account_id: str) -> Dict[str, Any]:
     }
 ```
 
-- [ ] **Step 6: Write the migration**
+- [x] **Step 6: Write the migration**
 
 Create `backend/alembic/versions/0009_run_artifacts.py`:
 
@@ -1126,7 +1126,7 @@ def downgrade() -> None:
     op.drop_table("run_artifacts")
 ```
 
-- [ ] **Step 7: Run the tests**
+- [x] **Step 7: Run the tests**
 
 Run: `cd backend && .venv/Scripts/python -m pytest tests/test_agent_artifacts.py -v`
 Expected: PASS — all four tests.
@@ -1137,7 +1137,7 @@ Moto intercepts at the botocore layer, so `put_dataset`/`get_dataset` still roun
 
 Note: against a *real* MinIO, `put_object`'s unconditional `ServerSideEncryption="AES256"` fails with "KMS not configured" on recent releases unless the server has a KMS backend (`MINIO_KMS_SECRET_KEY`). That is a local-dev environment concern, not a code change.
 
-- [ ] **Step 8: Verify the migration round-trips**
+- [x] **Step 8: Verify the migration round-trips**
 
 ```bash
 cd backend
@@ -1148,7 +1148,7 @@ cd backend
 
 Expected: all three succeed.
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add backend/requirements.txt backend/app/storage_s3.py backend/app/models.py backend/app/db/models.py backend/app/agent_runtime/artifacts.py backend/alembic/versions/0009_run_artifacts.py backend/tests/test_agent_artifacts.py
@@ -1176,7 +1176,7 @@ Effect classification and byte-stable serialization. This is where the prompt-ca
   - `serialize_tools() -> str`
   - `requires_gate(tool_name: str, autonomy: AutonomyLevel) -> bool`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `backend/tests/test_agent_registry.py`:
 
@@ -1230,12 +1230,12 @@ def test_unknown_tool_is_gated_rather_than_allowed():
     assert registry.requires_gate("not_a_real_tool", AutonomyLevel.auto) is True
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `cd backend && .venv/Scripts/python -m pytest tests/test_agent_registry.py -v`
 Expected: FAIL — `ImportError: cannot import name 'registry'`
 
-- [ ] **Step 3: Write the registry**
+- [x] **Step 3: Write the registry**
 
 Create `backend/app/agent_runtime/registry.py`:
 
@@ -1334,12 +1334,12 @@ def requires_gate(tool_name: str, autonomy: AutonomyLevel) -> bool:
 
 If Task 1 recorded a schema accessor other than `.to_dict()`, use that accessor in `serialize_tools`.
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `cd backend && .venv/Scripts/python -m pytest tests/test_agent_registry.py -v`
 Expected: PASS. The first three tests pass trivially against an empty registry — Task 6 gives them real content.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/app/agent_runtime/registry.py backend/tests/test_agent_registry.py
@@ -1370,7 +1370,7 @@ git commit -m "feat(agent): tool registry with effect gating and stable serializ
 
 `match_datasets` returns `{rows_in_a, rows_in_b, matched, unmatched_a, unmatched_b, fuzzy_count}` — Task 7's critic checks conservation against these exact keys.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `backend/tests/test_agent_tools_core.py`:
 
@@ -1487,12 +1487,12 @@ def test_current_run_raises_outside_a_run():
         context.current_run()
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `cd backend && .venv/Scripts/python -m pytest tests/test_agent_tools_core.py -v`
 Expected: FAIL — `ImportError: cannot import name 'context'`
 
-- [ ] **Step 3: Write the run context**
+- [x] **Step 3: Write the run context**
 
 Create `backend/app/agent_runtime/context.py`:
 
@@ -1537,7 +1537,7 @@ def current_run() -> RunContext:
     return ctx
 ```
 
-- [ ] **Step 4: Write the core tools**
+- [x] **Step 4: Write the core tools**
 
 Create `backend/app/agent_runtime/tools_core.py`:
 
@@ -1674,12 +1674,12 @@ def match_datasets(
     }
 ```
 
-- [ ] **Step 5: Run the tests to verify they pass**
+- [x] **Step 5: Run the tests to verify they pass**
 
 Run: `cd backend && .venv/Scripts/python -m pytest tests/test_agent_tools_core.py tests/test_agent_registry.py -v`
 Expected: PASS. The registry tests now run against three real tools, so the sorted-order and byte-stability assertions have actual content.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add backend/app/agent_runtime/context.py backend/app/agent_runtime/tools_core.py backend/tests/test_agent_tools_core.py
@@ -1705,7 +1705,7 @@ Deterministic post-conditions on tool output, keyed by tool name. A failed check
 
 A check returns `None` when it passes, or a human-readable failure string.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `backend/tests/test_agent_critic.py`:
 
@@ -1770,12 +1770,12 @@ def test_a_raising_check_is_reported_not_propagated():
     assert any("ZeroDivisionError" in f for f in result.failures)
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `cd backend && .venv/Scripts/python -m pytest tests/test_agent_critic.py -v`
 Expected: FAIL — `ImportError: cannot import name 'critic'`
 
-- [ ] **Step 3: Write the critic**
+- [x] **Step 3: Write the critic**
 
 Create `backend/app/agent_runtime/critic.py`:
 
@@ -1855,12 +1855,12 @@ register_check("match_datasets", _match_conserves_rows)
 register_check("bind_columns", _bind_counts_are_sane)
 ```
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `cd backend && .venv/Scripts/python -m pytest tests/test_agent_critic.py -v`
 Expected: PASS — all six tests.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/app/agent_runtime/critic.py backend/tests/test_agent_critic.py
@@ -1884,7 +1884,7 @@ Two budgets exist (spec §2.7). This task builds the hard caps we enforce oursel
   - `Spend` — dataclass `{tool_calls: int, usd: float, started_at: float}`, with `record_tool_call()`, `record_llm(usd)`, `elapsed_s()`, `to_dict()`
   - `exceeded(budget: Budget, spend: Spend) -> str | None` — reason string or None
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `backend/tests/test_agent_budget.py`:
 
@@ -1953,12 +1953,12 @@ def test_spend_serializes_for_persistence():
     assert d["usd"] == 0.02
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `cd backend && .venv/Scripts/python -m pytest tests/test_agent_budget.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'app.agent_runtime.budget'`
 
-- [ ] **Step 3: Write the budget module**
+- [x] **Step 3: Write the budget module**
 
 Create `backend/app/agent_runtime/budget.py`:
 
@@ -2044,12 +2044,12 @@ def exceeded(budget: Budget, spend: Spend) -> Optional[str]:
     return None
 ```
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `cd backend && .venv/Scripts/python -m pytest tests/test_agent_budget.py -v`
 Expected: PASS — all eight tests.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/app/agent_runtime/budget.py backend/tests/test_agent_budget.py
@@ -2081,7 +2081,7 @@ Ties everything together: Tool Runner iteration, transcript mirroring, event emi
   - `execute_run(*, run_id: str, account_id: str, driver: Driver | None = None) -> Run`
   - `SYSTEM_PROMPT` — the fixed instruction block
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `backend/tests/test_agent_runtime.py`:
 
@@ -2289,12 +2289,12 @@ def test_system_prompt_puts_core_instructions_first(account_id):
     assert "never compute money" in system[0]["text"]
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `cd backend && .venv/Scripts/python -m pytest tests/test_agent_runtime.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'app.agent_runtime.runtime'`
 
-- [ ] **Step 3: Write the runtime**
+- [x] **Step 3: Write the runtime**
 
 Create `backend/app/agent_runtime/runtime.py`:
 
@@ -2592,7 +2592,7 @@ def execute_run(
         reset_run_context(token)
 ```
 
-- [ ] **Step 4: Export the public surface**
+- [x] **Step 4: Export the public surface**
 
 Replace `backend/app/agent_runtime/__init__.py` with:
 
@@ -2602,14 +2602,14 @@ from .runtime import execute_run  # noqa: F401
 from .store import create_run, events_since, load_run  # noqa: F401
 ```
 
-- [ ] **Step 5: Run the tests to verify they pass**
+- [x] **Step 5: Run the tests to verify they pass**
 
 Run: `cd backend && .venv/Scripts/python -m pytest tests/test_agent_runtime.py -v`
 Expected: PASS — all eight tests.
 
 `test_critic_failure_aborts_the_run` registers a check that always fails, and the critic registry is module-global. Run the file on its own to confirm, then run the whole agent suite (`pytest tests/test_agent_*.py -v`) to confirm no cross-test leakage. If leakage appears, add a fixture that snapshots and restores `critic._CHECKS` around that test.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add backend/app/agent_runtime/runtime.py backend/app/agent_runtime/__init__.py backend/tests/test_agent_runtime.py
@@ -2636,7 +2636,7 @@ Today's pipeline becomes one registered tool. This is what makes the migration z
 
 Return shape: `{job_id, matched, unmatched_a, unmatched_b, discrepancies, triage_emitted, insights_status, rule_applications}` — counts only.
 
-- [ ] **Step 1: Extract the existing job persistence**
+- [x] **Step 1: Extract the existing job persistence**
 
 Open `backend/app/main.py` and read `_run_job_background` (starts at line 335). It calls `agent.run_job(...)` and then writes the result via `storage.update_job` / `storage.save_job`.
 
@@ -2649,12 +2649,12 @@ def persist_agent_output(*, job_id: str, account_id: str, output) -> None:
 
 Copy the existing body verbatim; do not redesign the payload shape. Then change `_run_job_background` to call `persist_agent_output(...)`. The upload path's behaviour must be byte-identical after this step.
 
-- [ ] **Step 2: Verify the extraction changed nothing**
+- [x] **Step 2: Verify the extraction changed nothing**
 
 Run: `cd backend && .venv/Scripts/python -m pytest tests/test_async_jobs.py tests/test_job_progress.py -v`
 Expected: PASS with no edits to those tests. If they fail, the extraction changed behaviour — revert and redo.
 
-- [ ] **Step 3: Write the failing macro-tool test**
+- [x] **Step 3: Write the failing macro-tool test**
 
 Create `backend/tests/test_agent_macro_tool.py`:
 
@@ -2748,12 +2748,12 @@ def test_macro_tool_persists_a_readable_job(run_ctx):
     assert job["account_id"] == run_ctx.account_id
 ```
 
-- [ ] **Step 4: Run it to verify it fails**
+- [x] **Step 4: Run it to verify it fails**
 
 Run: `cd backend && .venv/Scripts/python -m pytest tests/test_agent_macro_tool.py -v`
 Expected: FAIL — `ImportError: cannot import name 'tools_macro'`
 
-- [ ] **Step 5: Write the macro-tool**
+- [x] **Step 5: Write the macro-tool**
 
 Create `backend/app/agent_runtime/tools_macro.py`:
 
@@ -2838,7 +2838,7 @@ def run_reconciliation(
     }
 ```
 
-- [ ] **Step 6: Import the macro-tool so it registers**
+- [x] **Step 6: Import the macro-tool so it registers**
 
 Add to `backend/app/agent_runtime/runtime.py`, in the existing import line from `.`:
 
@@ -2848,12 +2848,12 @@ from . import artifacts, critic, registry, store, tools_core, tools_macro  # noq
 
 Registration happens at import; without this the tool never reaches the model.
 
-- [ ] **Step 7: Run the tests**
+- [x] **Step 7: Run the tests**
 
 Run: `cd backend && .venv/Scripts/python -m pytest tests/test_agent_macro_tool.py tests/test_agent_registry.py -v`
 Expected: PASS. The registry's sorted-order test now covers four tools.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add backend/app/agent_runtime/job_persist.py backend/app/agent_runtime/tools_macro.py backend/app/agent_runtime/runtime.py backend/app/main.py backend/tests/test_agent_macro_tool.py
@@ -2882,7 +2882,7 @@ SSE reconnect uses `Last-Event-ID` against the `run_events` bigserial. The clien
   - `GET /api/agent/runs/{run_id}/events/stream` → SSE
   - `router` — the `APIRouter` to mount
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `backend/tests/test_agent_routes.py`:
 
@@ -2996,12 +2996,12 @@ def test_run_is_not_readable_from_another_account(client, owner_headers, strange
 
 The fixtures follow `tests/test_auth_endpoints.py`: dev auth mode, `importlib.reload(main)` so the flag env vars are picked up at import, and the six-digit `dev_code` login. Two `TestClient` instances are needed for the cross-account test because each holds its own cookie jar — one user cannot be a stranger to their own account.
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `cd backend && .venv/Scripts/python -m pytest tests/test_agent_routes.py -v`
 Expected: FAIL — 404 on `/api/agent/runs` (router not mounted).
 
-- [ ] **Step 3: Write the routes**
+- [x] **Step 3: Write the routes**
 
 Create `backend/app/agent_runtime/routes.py`:
 
@@ -3144,7 +3144,7 @@ async def stream_events(
 
 Note the `runtime` import at the top of the file is what lets `create_run` schedule execution — `from . import runtime, store`.
 
-- [ ] **Step 4: Mount the router**
+- [x] **Step 4: Mount the router**
 
 In `backend/app/main.py`, next to the existing router mounts (search for `include_router`), add:
 
@@ -3153,12 +3153,12 @@ from .agent_runtime.routes import router as agent_router
 app.include_router(agent_router)
 ```
 
-- [ ] **Step 5: Run the tests**
+- [x] **Step 5: Run the tests**
 
 Run: `cd backend && .venv/Scripts/python -m pytest tests/test_agent_routes.py -v`
 Expected: PASS — all four tests.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add backend/app/agent_runtime/routes.py backend/app/main.py backend/tests/test_agent_routes.py
@@ -3171,6 +3171,8 @@ git commit -m "feat(agent): run creation and SSE event stream endpoints"
 
 Phase A's acceptance criterion: a classic-recon goal driven through the runtime produces the *same* numbers as calling the pipeline directly. If it does not, the macro-tool wrapper has introduced a regression and the whole zero-regression argument fails.
 
+> **Superseded — do not copy the code blocks below verbatim.** The test as written drives `execute_run` at `auto` and waits on a `tool_returned` event that cannot exist, because `run_reconciliation` is a `write` and writes gate at every autonomy level. See "Amended during implementation" at the end of this document; `backend/tests/test_agent_eval_parity.py` is the shipped version.
+
 **Files:**
 - Create: `backend/tests/test_agent_eval_parity.py`
 - Modify: `backend/app/eval.py`
@@ -3179,7 +3181,7 @@ Phase A's acceptance criterion: a classic-recon goal driven through the runtime 
 - Consumes: `runtime.execute_run` (Task 9), `tools_macro.run_reconciliation` (Task 10), `app.agent.run_job`
 - Produces: `app.eval.parity_report(account_id: str) -> dict` — `{direct, via_runtime, matches: bool}`
 
-- [ ] **Step 1: Write the failing parity test**
+- [x] **Step 1: Write the failing parity test**
 
 Create `backend/tests/test_agent_eval_parity.py`:
 
@@ -3318,12 +3320,12 @@ def test_no_verdict_originates_from_the_model(account):
     assert tool_outputs == [], "no tool ran, so no figure is authoritative"
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `cd backend && .venv/Scripts/python -m pytest tests/test_agent_eval_parity.py -v`
 Expected: FAIL — until Tasks 9 and 10 are complete this cannot pass. If they are complete and it still fails, the macro-tool changed the numbers; fix `tools_macro.py`, not the test.
 
-- [ ] **Step 3: Expose parity as a callable report**
+- [x] **Step 3: Expose parity as a callable report**
 
 Add to the end of `backend/app/eval.py`:
 
@@ -3418,7 +3420,7 @@ def parity_report(account_id: str, df_a, df_b) -> dict:
     }
 ```
 
-- [ ] **Step 3b: Have the test call the shared report**
+- [x] **Step 3b: Have the test call the shared report**
 
 Replace the body of `test_runtime_path_matches_direct_pipeline` so the comparison lives in one place:
 
@@ -3432,12 +3434,12 @@ def test_runtime_path_matches_direct_pipeline(account):
 
 Delete the now-unused `_direct` helper and the `ScriptedDriver` class from the test file if nothing else references them.
 
-- [ ] **Step 4: Run the full suite**
+- [x] **Step 4: Run the full suite**
 
 Run: `cd backend && .venv/Scripts/python -m pytest -q`
 Expected: all pass, including every pre-existing test. Nothing in `app/agent.py`, `app/tools/`, or `app/memory/` changed in this phase, so any failure there is a real regression.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/app/eval.py backend/tests/test_agent_eval_parity.py
@@ -3453,11 +3455,33 @@ Phase A is complete when, with `RECONOPS_AGENT_RUNTIME=1`:
 1. `POST /api/agent/runs` with a goal creates a run and returns its id.
 2. `GET /api/agent/runs/{id}/events/stream` streams events, and reconnecting with `Last-Event-ID` resumes without gaps or duplicates.
 3. A run in `observe` suspends before its first tool call and records `suspended_on`.
-4. A run in `auto` executes `run_reconciliation` and produces the same counts as calling `run_job` directly.
+4. `run_reconciliation` produces the same counts as calling `run_job` directly, verified by `eval.parity_report`. A run in `auto` *proposes* rather than executes it — see "Amended during implementation" below.
 5. A failed critic check aborts the run and is visible in the event log.
 6. Exceeding any hard cap aborts the run and emits `budget_exceeded`.
 7. `runs.transcript` round-trips, so a suspended run can be rehydrated in a new process.
 8. The existing upload → results → inbox flow is unchanged, and the full pre-existing suite passes.
+
+## Amended during implementation
+
+Recorded so the diff between this plan and the shipped code is deliberate and legible.
+
+**DoD 4 — `auto` does not execute `run_reconciliation`; it proposes it.**
+
+As originally written, DoD 4 and Task 12's parity test contradicted Task 5 and the spec. The chain:
+
+- Task 5's registry gates `write` at *every* autonomy level, `auto` included — pinned by `test_write_tools_gate_at_every_level`.
+- Task 10 registers `run_reconciliation` as `Effect.write`.
+- Spec §2.3 is the authority and agrees with the registry: `write` at `auto` is *"proposal unless covered by an accepted rule/playbook."* Playbooks are Phase C, so in Phase A nothing can cover it.
+
+So a loop-driven run at `auto` suspends for approval and the tool never runs. Task 12's original test looked for a `tool_returned` event that cannot exist and died on `StopIteration`. Resume is an explicit Phase A non-goal, so there is no way to drive it past the gate either.
+
+**Resolution:** the plan drifted from the spec; the code follows the spec. `eval.parity_report` compares at the tool boundary — `tools_macro.run_reconciliation` against `agent.run_job` — which is where the zero-regression risk actually lives (binding, config assembly, count extraction). The loop's gating is orthogonal and covered by Task 9's tests. `test_auto_still_suspends_before_the_macro_tool_writes` pins the gate, so if the autonomy dial is ever weakened the parity report can move back through `execute_run`.
+
+**Task 11 — SSE stream coverage added.** The plan specified four route tests, none of which touched `/events/stream` — the phase's headline surface. Added: id-bearing frame emission, `Last-Event-ID` resume, termination on terminal status (without the break the request polls forever and the test hangs), and cross-account 404.
+
+**Task 12 — S3 mocking added.** The parity test hits `artifacts.put_dataset`, so it needs the `RECONOPS_S3_*` monkeypatch plus moto `@mock_aws` that Task 4 documents. The plan's Task 12 listing omitted it and failed on `KeyError: 'RECONOPS_S3_BUCKET'`.
+
+**Migrations 0008/0009 verified late.** Their upgrade→downgrade→upgrade round-trips (Task 2 Step 7, Task 4 Step 8) had not actually been run against the dev database, which sat at `0007`. Both round-trip cleanly; the dev DB is now at `0009 (head)`.
 
 ## Known gaps deferred past Phase A
 
