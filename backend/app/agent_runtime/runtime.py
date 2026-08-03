@@ -128,12 +128,15 @@ def _goal_text(run: Run) -> str:
 
 
 def _dispatch(name: str, payload: Dict[str, Any]) -> Dict[str, Any]:
-    # Deferred: resolution is by attribute lookup on `tools_core`, not an
-    # explicit allowlist, so any module-level callable there is reachable by
-    # name. What keeps this safe today is `registry.requires_gate` failing
-    # closed — an unregistered name always gates and never reaches here
-    # unattended. Narrowing this to the registry's own table is a follow-up.
-    fn = getattr(tools_core, name, None)
+    """Execute a registered tool by name.
+
+    Resolution is the registry's table, not an attribute lookup on a
+    module: a name is executable exactly when it is registered, and
+    registration is also what assigns the effect the gate reads. That
+    keeps "gateable" and "runnable" from drifting apart, and it is what
+    makes tools outside `tools_core` — `run_reconciliation` — dispatchable.
+    """
+    fn = registry.callable_for(name)
     if fn is None:
         raise KeyError(f"unknown tool {name}")
     return fn(**payload)

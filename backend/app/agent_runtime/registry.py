@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import json
 from enum import Enum
-from typing import Any, Callable, Dict, List
+from typing import Any, Callable, Dict, List, Optional
 
 from anthropic import beta_tool
 
@@ -63,6 +63,16 @@ def tier1_tools() -> List[Any]:
 
 def effect_of(tool_name: str) -> Effect:
     return _EFFECTS.get(tool_name, Effect.write)
+
+
+def callable_for(tool_name: str) -> Optional[Any]:
+    """The registered callable for a tool name, or None.
+
+    Dispatch goes through the registry rather than a module attribute
+    lookup, so a name is executable exactly when it is registered — and
+    registration is also what assigns its effect. The two cannot drift.
+    """
+    return _TOOLS.get(tool_name)
 
 
 def serialize_tools() -> str:

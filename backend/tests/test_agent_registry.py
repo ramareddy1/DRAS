@@ -85,3 +85,17 @@ def test_unknown_tool_is_gated_rather_than_allowed():
     assert registry.requires_gate("not_a_real_tool", AutonomyLevel.auto) is True
 
 
+def test_macro_tool_is_dispatchable():
+    """The gate is the only reason this has not broken yet.
+
+    `run_reconciliation` lives in tools_macro, not tools_core, so the old
+    attribute-lookup dispatch could not find it. It always gated, so the
+    call never reached dispatch — until resume executes an approved one.
+    """
+    from app.agent_runtime import runtime, tools_macro  # noqa: F401
+
+    assert registry.callable_for("run_reconciliation") is not None
+
+
+def test_callable_for_returns_none_for_an_unregistered_name():
+    assert registry.callable_for("not_a_real_tool") is None
