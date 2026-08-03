@@ -21,7 +21,7 @@ from typing import Any, Dict, List, Optional, Protocol
 
 from ..llm import DEFAULT_MODEL
 from ..models import Run, RunEventType, RunStatus
-from . import artifacts, critic, registry, store, tools_core  # noqa: F401
+from . import artifacts, critic, registry, store, tools_core, tools_macro  # noqa: F401
 from .budget import Budget, Spend, exceeded
 from .context import RunContext, reset_run_context, set_run_context
 
