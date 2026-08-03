@@ -47,6 +47,7 @@ load_dotenv()
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
 JOB_TIMEOUT_SECONDS = int(os.getenv("RECONOPS_JOB_TIMEOUT_SECONDS", "900"))
 
+from .agent_runtime.routes import router as agent_router
 from .auth import members as members_store
 from .auth.routes import require_user, router as auth_router
 from .integrations.routes import router as connections_router
@@ -79,6 +80,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="ReconOps AI", version="0.1.0", lifespan=lifespan)
 app.include_router(auth_router)
 app.include_router(connections_router)
+app.include_router(agent_router)
 
 setup_logging()
 setup_sentry()
