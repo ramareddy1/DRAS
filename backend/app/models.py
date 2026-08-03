@@ -387,6 +387,8 @@ class Run(BaseModel):
     budget: Dict[str, Any] = Field(default_factory=dict)
     spend: Dict[str, Any] = Field(default_factory=dict)
     suspended_on: Optional[int] = None
+    suspended_at: Optional[str] = None
+    rejected_calls: List[Dict[str, Any]] = Field(default_factory=list)
     transcript: List[Dict[str, Any]] = Field(default_factory=list)
     created_at: Optional[str] = None
     ended_at: Optional[str] = None

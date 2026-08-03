@@ -247,6 +247,9 @@ def execute_run(
                         run_id=run.id, account_id=account_id,
                         transcript=messages, spend=spend.to_dict(),
                     )
+                    store.set_suspended_at(
+                        run_id=run.id, account_id=account_id,
+                    )
                     store.set_status(
                         run_id=run.id, account_id=account_id,
                         status=RunStatus.suspended, suspended_on=q.id,

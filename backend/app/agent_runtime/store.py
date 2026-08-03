@@ -162,3 +162,58 @@ def set_status(
             run.ended_at = _now()
 
     _mutate(run_id, account_id, apply)
+
+
+def set_suspended_at(*, run_id: str, account_id: str) -> None:
+    """Stamp when a run began waiting on a human.
+
+    Nothing reads this yet. It exists so a reaper for abandoned suspended
+    runs has a field to sort on — that reaper is deliberately out of scope
+    here, but the timestamp is only recordable at the moment of suspension.
+    """
+
+    def apply(run: Run) -> None:
+        run.suspended_at = _now()
+
+    _mutate(run_id, account_id, apply)
+
+
+def claim_suspended(run_id: str, account_id: str) -> Optional[Run]:
+    """Atomically take ownership of a suspended run, or return None.
+
+    Answering a gate is a two-step operation — flip the status, then
+    execute the pending tool — and two concurrent answers would otherwise
+    both pass the status check and run the tool twice. The row lock
+    serializes them, and the status test inside it means only the first
+    caller sees `suspended`; everyone after gets None.
+
+    Returns None rather than raising for a missing or cross-account run,
+    so the caller cannot use it as an existence oracle.
+    """
+    with session_scope() as s:
+        row = s.scalar(
+            select(RunORM).where(
+                RunORM.id == run_id, RunORM.account_id == account_id,
+            ).with_for_update()
+        )
+        if row is None:
+            return None
+        run = Run.model_validate(row.payload)
+        if run.status is not RunStatus.suspended:
+            return None
+        run.status = RunStatus.running
+        run.suspended_on = None
+        row.payload = run.model_dump(mode="json")
+        row.status = run.status.value
+        return run
+
+
+def record_rejected_calls(
+    *, run_id: str, account_id: str, calls: List[Dict[str, Any]],
+) -> None:
+    """Persist the calls a user has refused, for the repeat guard."""
+
+    def apply(run: Run) -> None:
+        run.rejected_calls = calls
+
+    _mutate(run_id, account_id, apply)

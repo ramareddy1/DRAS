@@ -156,3 +156,72 @@ def test_concurrent_append_event_does_not_collide_on_seq(account_id):
         f"expected contiguous seqs 0..{n_threads - 1} with no duplicates/"
         f"gaps, got {sorted(seqs)}"
     )
+
+
+def test_claim_suspended_flips_status_and_clears_the_question(account_id):
+    run = store.create_run(
+        account_id=account_id, goal={}, autonomy=AutonomyLevel.assist, budget={},
+    )
+    q = store.append_event(
+        run=run, type=RunEventType.question_asked, payload={"tool": "x"},
+    )
+    store.set_status(
+        run_id=run.id, account_id=account_id,
+        status=RunStatus.suspended, suspended_on=q.id,
+    )
+
+    claimed = store.claim_suspended(run.id, account_id)
+    assert claimed is not None
+    assert claimed.status is RunStatus.running
+    assert claimed.suspended_on is None
+
+
+def test_claim_suspended_is_single_use(account_id):
+    """The double-POST guard: two answers must not both execute the tool."""
+    run = store.create_run(
+        account_id=account_id, goal={}, autonomy=AutonomyLevel.assist, budget={},
+    )
+    store.set_status(
+        run_id=run.id, account_id=account_id, status=RunStatus.suspended,
+    )
+
+    assert store.claim_suspended(run.id, account_id) is not None
+    assert store.claim_suspended(run.id, account_id) is None
+
+
+def test_claim_suspended_refuses_a_run_that_never_suspended(account_id):
+    run = store.create_run(
+        account_id=account_id, goal={}, autonomy=AutonomyLevel.assist, budget={},
+    )
+    assert store.claim_suspended(run.id, account_id) is None
+
+
+def test_claim_suspended_is_account_scoped(account_id):
+    run = store.create_run(
+        account_id=account_id, goal={}, autonomy=AutonomyLevel.assist, budget={},
+    )
+    store.set_status(
+        run_id=run.id, account_id=account_id, status=RunStatus.suspended,
+    )
+    other = str(uuid.uuid4())
+    with session_scope() as s:
+        s.add(AccountORM(id=other, payload={}))
+
+    assert store.claim_suspended(run.id, other) is None
+    # ...and the run is untouched, so the owner can still claim it.
+    assert store.claim_suspended(run.id, account_id) is not None
+
+
+def test_rejected_calls_round_trip(account_id):
+    run = store.create_run(
+        account_id=account_id, goal={}, autonomy=AutonomyLevel.assist, budget={},
+    )
+    store.record_rejected_calls(
+        run_id=run.id, account_id=account_id,
+        calls=[{"tool": "run_reconciliation", "input": {"a": 1}}],
+    )
+
+    loaded = store.load_run(run.id, account_id)
+    assert loaded.rejected_calls == [
+        {"tool": "run_reconciliation", "input": {"a": 1}},
+    ]
