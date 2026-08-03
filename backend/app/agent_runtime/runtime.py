@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Protocol
+from typing import Any, Dict, List, Optional, Protocol, Tuple
 
 from ..llm import DEFAULT_MODEL
 from ..models import Run, RunEventType, RunStatus
@@ -50,6 +50,18 @@ class ToolCall:
 class Turn:
     text: Optional[str] = None
     tool_calls: List[ToolCall] = field(default_factory=list)
+
+
+@dataclass
+class _Executed:
+    """Outcome of running one turn's tool calls.
+
+    `abort` is set when a cap or a critic stopped the turn part-way. The
+    caller persists and terminates; carrying it in the return value rather
+    than raising keeps the two entry points handling it identically.
+    """
+    results: List[Dict[str, Any]] = field(default_factory=list)
+    abort: Optional[Tuple[RunStatus, str]] = None
 
 
 class Driver(Protocol):
@@ -162,6 +174,187 @@ def _would_exceed(budget: Budget, spend: Spend) -> Optional[str]:
     return exceeded(budget, probe)
 
 
+def _execute_calls(
+    *, run: Run, account_id: str, calls: List[ToolCall],
+    budget: Budget, spend: Spend,
+) -> _Executed:
+    """Run one turn's tool calls, checking caps before each.
+
+    A cap that can only trip once a whole turn has run is not a hard cap,
+    so the probe happens per call rather than per batch.
+    """
+    out = _Executed()
+    for call in calls:
+        reason = _would_exceed(budget, spend)
+        if reason:
+            store.append_event(
+                run=run, type=RunEventType.budget_exceeded,
+                payload={"reason": reason},
+            )
+            out.abort = (RunStatus.aborted, reason)
+            return out
+
+        store.append_event(
+            run=run, type=RunEventType.tool_called,
+            payload={"tool": call.name, "input": call.input},
+        )
+        # Phase A spend tracking is tool calls and wall clock only.
+        # `Spend.record_llm` is never called — `Turn` carries no token usage
+        # back from the driver — so `spend.usd` stays 0.0 and `budget.usd_cap`
+        # is inert. The tool-call and wall-clock caps carry enforcement.
+        spend.record_tool_call()
+
+        try:
+            output = _dispatch(call.name, call.input)
+        except Exception as exc:
+            store.append_event(
+                run=run, type=RunEventType.tool_failed,
+                payload={
+                    "tool": call.name,
+                    "error": f"{type(exc).__name__}: {exc}",
+                },
+            )
+            out.results.append({
+                "type": "tool_result", "tool_use_id": call.id,
+                "content": f"error: {exc}", "is_error": True,
+            })
+            continue
+
+        verdict = critic.check(call.name, output)
+        store.append_event(
+            run=run, type=RunEventType.critic_check,
+            payload={
+                "tool": call.name, "passed": verdict.passed,
+                "failures": verdict.failures,
+            },
+        )
+        if not verdict.passed:
+            out.abort = (RunStatus.aborted, "; ".join(verdict.failures))
+            return out
+
+        store.append_event(
+            run=run, type=RunEventType.tool_returned,
+            payload={"tool": call.name, "output": output},
+        )
+        out.results.append({
+            "type": "tool_result", "tool_use_id": call.id,
+            "content": json.dumps(output, default=str),
+        })
+    return out
+
+
+def _drive(
+    *, run: Run, account_id: str, messages: List[Dict[str, Any]],
+    budget: Budget, spend: Spend, driver: Driver,
+) -> Run:
+    """The plan-execute-verify loop, shared by fresh starts and resumes.
+
+    The caller owns the run context and the initial status; this owns the
+    turns. Both entry points hand it a `messages` list that already ends
+    somewhere the model can continue from.
+    """
+    def _finish(status: RunStatus, error: Optional[str]) -> Run:
+        store.save_transcript(
+            run_id=run.id, account_id=account_id,
+            transcript=messages, spend=spend.to_dict(),
+        )
+        store.set_status(
+            run_id=run.id, account_id=account_id, status=status, error=error,
+        )
+        return store.load_run(run.id, account_id)
+
+    tools = registry.tier1_tools()
+
+    for _ in range(MAX_ITERATIONS):
+        turn = driver.next_turn(
+            system=_system_blocks(run),
+            messages=messages,
+            tools=tools,
+            task_budget_tokens=budget.task_budget_tokens,
+        )
+
+        assistant_content: List[Dict[str, Any]] = []
+        if turn.text:
+            assistant_content.append({"type": "text", "text": turn.text})
+            store.append_event(
+                run=run, type=RunEventType.assistant_text,
+                payload={"text": turn.text},
+            )
+        for call in turn.tool_calls:
+            assistant_content.append({
+                "type": "tool_use", "id": call.id,
+                "name": call.name, "input": call.input,
+            })
+        messages.append({"role": "assistant", "content": assistant_content})
+
+        if not turn.tool_calls:
+            break
+
+        # Pass 1 — gate the whole turn before executing any of it.
+        # Suspension is all-or-nothing per turn: if a later call needs
+        # approval, an earlier read must not have already run. Otherwise the
+        # saved transcript ends with an assistant message whose tool_use
+        # blocks are only partly answered, and the run cannot be resumed
+        # coherently.
+        for call in turn.tool_calls:
+            if registry.requires_gate(call.name, run.autonomy):
+                q = store.append_event(
+                    run=run, type=RunEventType.question_asked,
+                    payload={
+                        "text": f"Run {call.name}?",
+                        "tool": call.name, "input": call.input,
+                    },
+                )
+                store.save_transcript(
+                    run_id=run.id, account_id=account_id,
+                    transcript=messages, spend=spend.to_dict(),
+                )
+                store.set_suspended_at(run_id=run.id, account_id=account_id)
+                store.set_status(
+                    run_id=run.id, account_id=account_id,
+                    status=RunStatus.suspended, suspended_on=q.id,
+                )
+                return store.load_run(run.id, account_id)
+
+        executed = _execute_calls(
+            run=run, account_id=account_id, calls=turn.tool_calls,
+            budget=budget, spend=spend,
+        )
+        if executed.abort is not None:
+            status, error = executed.abort
+            return _finish(status, error)
+
+        messages.append({"role": "user", "content": executed.results})
+
+        # Backstop: a turn that lands exactly on a cap (or runs the clock
+        # out) trips here, before another model round-trip is paid for.
+        reason = exceeded(budget, spend)
+        if reason:
+            store.append_event(
+                run=run, type=RunEventType.budget_exceeded,
+                payload={"reason": reason},
+            )
+            return _finish(RunStatus.aborted, reason)
+    else:
+        # No `break`: the loop ran out of iterations while the model was
+        # still asking for tools. The run is truncated mid-work, not
+        # finished — reporting `done` here would make a cut-off run
+        # indistinguishable from a completed one.
+        reason = f"iteration cap reached: {MAX_ITERATIONS} model turns"
+        store.append_event(
+            run=run, type=RunEventType.budget_exceeded,
+            payload={"reason": reason},
+        )
+        return _finish(RunStatus.aborted, reason)
+
+    # Reached only via the `break` above: the model stopped calling tools.
+    store.append_event(
+        run=run, type=RunEventType.run_finished,
+        payload={"spend": spend.to_dict()},
+    )
+    return _finish(RunStatus.done, None)
+
+
 def execute_run(
     *, run_id: str, account_id: str, driver: Optional[Driver] = None,
 ) -> Run:
@@ -172,10 +365,10 @@ def execute_run(
     # Only a run that has not finished may be started. This function rebuilds
     # the message history from the goal and ignores `run.transcript`, so
     # re-invoking a finished run would restart it from scratch and duplicate
-    # its event log. Resuming a suspended run is a separate capability
-    # (spec 2.6) and must not be silently conflated with a fresh start.
-    # `running` is allowed because that is what a crashed worker leaves
-    # behind, and a retry has to be able to pick it up.
+    # its event log. Resuming a suspended run is `resume_run`, and must not
+    # be silently conflated with a fresh start. `running` is allowed because
+    # that is what a crashed worker leaves behind, and a retry has to be able
+    # to pick it up.
     if run.status not in (RunStatus.pending, RunStatus.running):
         raise ValueError(
             f"run {run.id} is not startable: status is {run.status.value}"
@@ -184,8 +377,6 @@ def execute_run(
     driver = driver or AnthropicDriver()
     budget = Budget.from_dict(run.budget)
     spend = Spend()
-    tools = registry.tier1_tools()
-
     messages: List[Dict[str, Any]] = [
         {"role": "user", "content": _goal_text(run)},
     ]
@@ -202,191 +393,10 @@ def execute_run(
         store.append_event(
             run=run, type=RunEventType.goal_received, payload=run.goal,
         )
-
-        for _ in range(MAX_ITERATIONS):
-            turn = driver.next_turn(
-                system=_system_blocks(run),
-                messages=messages,
-                tools=tools,
-                task_budget_tokens=budget.task_budget_tokens,
-            )
-
-            assistant_content: List[Dict[str, Any]] = []
-            if turn.text:
-                assistant_content.append({"type": "text", "text": turn.text})
-                store.append_event(
-                    run=run, type=RunEventType.assistant_text,
-                    payload={"text": turn.text},
-                )
-            for call in turn.tool_calls:
-                assistant_content.append({
-                    "type": "tool_use", "id": call.id,
-                    "name": call.name, "input": call.input,
-                })
-            messages.append({"role": "assistant", "content": assistant_content})
-
-            if not turn.tool_calls:
-                break
-
-            # Pass 1 — gate the whole turn before executing any of it.
-            # Suspension is all-or-nothing per turn: if a later call needs
-            # approval, an earlier read must not have already run. Otherwise
-            # the saved transcript ends with an assistant message whose
-            # tool_use blocks are only partly answered, and the run cannot be
-            # resumed coherently.
-            for call in turn.tool_calls:
-                if registry.requires_gate(call.name, run.autonomy):
-                    q = store.append_event(
-                        run=run, type=RunEventType.question_asked,
-                        payload={
-                            "text": f"Run {call.name}?",
-                            "tool": call.name, "input": call.input,
-                        },
-                    )
-                    store.save_transcript(
-                        run_id=run.id, account_id=account_id,
-                        transcript=messages, spend=spend.to_dict(),
-                    )
-                    store.set_suspended_at(
-                        run_id=run.id, account_id=account_id,
-                    )
-                    store.set_status(
-                        run_id=run.id, account_id=account_id,
-                        status=RunStatus.suspended, suspended_on=q.id,
-                    )
-                    return store.load_run(run.id, account_id)
-
-            # Pass 2 — execute, checking the caps before each call rather
-            # than after the batch. A cap that can only trip once a whole
-            # turn has run is not a hard cap.
-            results: List[Dict[str, Any]] = []
-            for call in turn.tool_calls:
-                reason = _would_exceed(budget, spend)
-                if reason:
-                    store.append_event(
-                        run=run, type=RunEventType.budget_exceeded,
-                        payload={"reason": reason},
-                    )
-                    store.save_transcript(
-                        run_id=run.id, account_id=account_id,
-                        transcript=messages, spend=spend.to_dict(),
-                    )
-                    store.set_status(
-                        run_id=run.id, account_id=account_id,
-                        status=RunStatus.aborted, error=reason,
-                    )
-                    return store.load_run(run.id, account_id)
-
-                store.append_event(
-                    run=run, type=RunEventType.tool_called,
-                    payload={"tool": call.name, "input": call.input},
-                )
-                # Phase A spend tracking is tool calls and wall clock only.
-                # `Spend.record_llm` is never called — `Turn` carries no token
-                # usage back from the driver — so `spend.usd` stays 0.0 and
-                # `budget.usd_cap` is inert: the money cap cannot trip. The
-                # tool-call and wall-clock caps carry enforcement for now;
-                # wiring real USD accounting is a follow-up task.
-                spend.record_tool_call()
-
-                try:
-                    output = _dispatch(call.name, call.input)
-                except Exception as exc:
-                    store.append_event(
-                        run=run, type=RunEventType.tool_failed,
-                        payload={
-                            "tool": call.name,
-                            "error": f"{type(exc).__name__}: {exc}",
-                        },
-                    )
-                    results.append({
-                        "type": "tool_result", "tool_use_id": call.id,
-                        "content": f"error: {exc}", "is_error": True,
-                    })
-                    continue
-
-                verdict = critic.check(call.name, output)
-                store.append_event(
-                    run=run, type=RunEventType.critic_check,
-                    payload={
-                        "tool": call.name, "passed": verdict.passed,
-                        "failures": verdict.failures,
-                    },
-                )
-                if not verdict.passed:
-                    store.save_transcript(
-                        run_id=run.id, account_id=account_id,
-                        transcript=messages, spend=spend.to_dict(),
-                    )
-                    store.set_status(
-                        run_id=run.id, account_id=account_id,
-                        status=RunStatus.aborted,
-                        error="; ".join(verdict.failures),
-                    )
-                    return store.load_run(run.id, account_id)
-
-                store.append_event(
-                    run=run, type=RunEventType.tool_returned,
-                    payload={"tool": call.name, "output": output},
-                )
-                results.append({
-                    "type": "tool_result", "tool_use_id": call.id,
-                    "content": json.dumps(output, default=str),
-                })
-
-            messages.append({"role": "user", "content": results})
-
-            # Backstop: a turn that lands exactly on a cap (or runs the clock
-            # out) trips here, before another model round-trip is paid for.
-            reason = exceeded(budget, spend)
-            if reason:
-                store.append_event(
-                    run=run, type=RunEventType.budget_exceeded,
-                    payload={"reason": reason},
-                )
-                store.save_transcript(
-                    run_id=run.id, account_id=account_id,
-                    transcript=messages, spend=spend.to_dict(),
-                )
-                store.set_status(
-                    run_id=run.id, account_id=account_id,
-                    status=RunStatus.aborted, error=reason,
-                )
-                return store.load_run(run.id, account_id)
-        else:
-            # No `break`: the loop ran out of iterations while the model was
-            # still asking for tools. The run is truncated mid-work, not
-            # finished — reporting `done` here would make a cut-off run
-            # indistinguishable from a completed one.
-            reason = f"iteration cap reached: {MAX_ITERATIONS} model turns"
-            store.append_event(
-                run=run, type=RunEventType.budget_exceeded,
-                payload={"reason": reason},
-            )
-            store.save_transcript(
-                run_id=run.id, account_id=account_id,
-                transcript=messages, spend=spend.to_dict(),
-            )
-            store.set_status(
-                run_id=run.id, account_id=account_id,
-                status=RunStatus.aborted, error=reason,
-            )
-            return store.load_run(run.id, account_id)
-
-        # Reached only via the `break` above: the model stopped calling tools.
-        store.append_event(
-            run=run, type=RunEventType.run_finished,
-            payload={"spend": spend.to_dict()},
+        return _drive(
+            run=run, account_id=account_id, messages=messages,
+            budget=budget, spend=spend, driver=driver,
         )
-        store.save_transcript(
-            run_id=run.id, account_id=account_id,
-            transcript=messages, spend=spend.to_dict(),
-        )
-        store.set_status(
-            run_id=run.id, account_id=account_id, status=RunStatus.done,
-        )
-        return store.load_run(run.id, account_id)
-
     except Exception as exc:
         # Persist whatever the run got through before recording the failure,
         # so the run and its event log still agree. A failure to save must
