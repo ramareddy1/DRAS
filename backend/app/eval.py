@@ -177,6 +177,80 @@ def synthetic_suite(inject_bad_rule=False):
 # Entrypoint
 # ---------------------------------------------------------------------------
 
+def parity_report(account_id: str, df_a, df_b) -> dict:
+    """Compare the agent-runtime path against the direct pipeline.
+
+    Phase A's release gate. Returns both result sets plus whether they agree,
+    so CI can fail the build on divergence rather than on a log line.
+
+    The comparison runs at the tool boundary — `tools_macro.run_reconciliation`
+    against `agent.run_job` — not through `runtime.execute_run`. That is
+    deliberate, and it is the only place the two paths can meet in Phase A:
+    `run_reconciliation` is registered as `Effect.write`, and a write gates at
+    *every* autonomy level including `auto`, so a loop-driven run suspends for
+    approval before the tool executes. Resume is not wired in Phase A, so
+    there is no way to drive it past that gate. The gate is also not what this
+    report is testing — the regression risk lives entirely in the wrapper
+    (binding, config assembly, count extraction), and that is what gets
+    exercised here.
+    """
+    import uuid as _uuid
+
+    from .agent_runtime import artifacts, context, tools_macro
+    from .agent_runtime import store as run_store
+    from .memory import accounts as accounts_memory
+    from .models import AutonomyLevel
+
+    account = accounts_memory.load_account(account_id)
+    if account is None:
+        raise KeyError(f"account {account_id} not found")
+
+    cfg = ReconcileConfig(
+        source_a=BindingSet(
+            bindings=bind_columns(df_a, account_id=account_id),
+        ),
+        source_b=BindingSet(
+            bindings=bind_columns(df_b, account_id=account_id),
+        ),
+        label_a="A", label_b="B",
+    )
+    out = run_job(
+        account=account, df_a=df_a, df_b=df_b, cfg=cfg, job_id=str(_uuid.uuid4()),
+    )
+    direct = {
+        "matched": len(out.matched),
+        "unmatched_a": len(out.unmatched_a),
+        "unmatched_b": len(out.unmatched_b),
+        "discrepancies": len(out.discrepancies),
+    }
+
+    run = run_store.create_run(
+        account_id=account_id, goal={"intent": "reconcile"},
+        autonomy=AutonomyLevel.auto, budget={"tool_call_cap": 5},
+    )
+    token = context.set_run_context(
+        context.RunContext(run_id=run.id, account_id=account_id),
+    )
+    try:
+        a = artifacts.put_dataset(
+            run_id=run.id, account_id=account_id, df=df_a, label="A",
+        )
+        b = artifacts.put_dataset(
+            run_id=run.id, account_id=account_id, df=df_b, label="B",
+        )
+        output = tools_macro.run_reconciliation(a, b, "A", "B")
+    finally:
+        context.reset_run_context(token)
+
+    via_runtime = {k: output[k] for k in direct}
+
+    return {
+        "direct": direct,
+        "via_runtime": via_runtime,
+        "matches": direct == via_runtime,
+    }
+
+
 def main(argv=None):
     argv = argv if argv is not None else sys.argv[1:]
     inject_bad = "--inject-bad-rule" in argv
