@@ -415,3 +415,142 @@ def execute_run(
         raise
     finally:
         reset_run_context(token)
+
+
+APPROVE = "approve"
+REJECT = "reject"
+
+
+def _pending_calls(messages: List[Dict[str, Any]]) -> List[ToolCall]:
+    """The unanswered tool_use blocks a suspended transcript ends with.
+
+    Raises if the transcript is not in that shape. Every downstream step
+    depends on the invariant, and a malformed continuation is a 400 from
+    the API with a far less obvious message than this one.
+    """
+    if not messages:
+        raise ValueError("cannot resume: transcript is empty")
+    last = messages[-1]
+    if last.get("role") != "assistant":
+        raise ValueError(
+            f"cannot resume: transcript ends with a {last.get('role')} turn"
+        )
+    calls = [
+        ToolCall(
+            id=b["id"], name=b["name"], input=dict(b.get("input") or {}),
+        )
+        for b in last.get("content", [])
+        if isinstance(b, dict) and b.get("type") == "tool_use"
+    ]
+    if not calls:
+        raise ValueError("cannot resume: no pending tool call to answer")
+    return calls
+
+
+def resume_run(
+    *, run_id: str, account_id: str, decision: str,
+    note: Optional[str] = None, driver: Optional[Driver] = None,
+) -> Run:
+    """Answer a gate and continue the run.
+
+    The caller must already hold the run via `store.claim_suspended`, which
+    is what makes a double-answer safe; this refuses anything not in
+    `running`. The decision becomes the `tool_result` answering every
+    pending `tool_use` — the API has no other legal continuation from a
+    suspended transcript.
+    """
+    if decision not in (APPROVE, REJECT):
+        raise ValueError(f"decision must be {APPROVE!r} or {REJECT!r}")
+
+    run = store.load_run(run_id, account_id)
+    if run is None:
+        raise KeyError(f"run {run_id} not found for account {account_id}")
+    if run.status is not RunStatus.running:
+        raise ValueError(
+            f"run {run.id} is not resumable: status is {run.status.value}"
+        )
+
+    driver = driver or AnthropicDriver()
+    budget = Budget.from_dict(run.budget)
+    spend = Spend.from_dict(run.spend)
+    messages: List[Dict[str, Any]] = list(run.transcript)
+    pending = _pending_calls(messages)
+
+    token = set_run_context(RunContext(run_id=run.id, account_id=account_id))
+    try:
+        store.append_event(
+            run=run, type=RunEventType.question_answered,
+            payload={
+                "decision": decision,
+                "note": note,
+                "tools": [c.name for c in pending],
+            },
+        )
+
+        if decision == APPROVE:
+            executed = _execute_calls(
+                run=run, account_id=account_id, calls=pending,
+                budget=budget, spend=spend,
+            )
+            if executed.abort is not None:
+                status, error = executed.abort
+                store.save_transcript(
+                    run_id=run.id, account_id=account_id,
+                    transcript=messages, spend=spend.to_dict(),
+                )
+                store.set_status(
+                    run_id=run.id, account_id=account_id,
+                    status=status, error=error,
+                )
+                return store.load_run(run.id, account_id)
+            results = executed.results
+        else:
+            denial = note or "The user declined this action."
+            results = [
+                {
+                    "type": "tool_result", "tool_use_id": call.id,
+                    "content": f"declined: {denial}", "is_error": True,
+                }
+                for call in pending
+            ]
+            rejected = list(run.rejected_calls) + [
+                {"tool": call.name, "input": call.input} for call in pending
+            ]
+            run.rejected_calls = rejected
+            store.record_rejected_calls(
+                run_id=run.id, account_id=account_id, calls=rejected,
+            )
+            store.append_event(
+                run=run, type=RunEventType.proposal_rejected,
+                payload={"tools": [c.name for c in pending]},
+            )
+
+        # One user message for the whole turn: splitting tool_results across
+        # messages trains the model out of parallel tool calls.
+        messages.append({"role": "user", "content": results})
+
+        if note:
+            # Mid-conversation system message (spec 4.6). Legal only here:
+            # it follows a user turn and is last. Opus 4.8 only — an
+            # unsupported model returns 400.
+            messages.append({"role": "system", "content": note})
+
+        return _drive(
+            run=run, account_id=account_id, messages=messages,
+            budget=budget, spend=spend, driver=driver,
+        )
+    except Exception as exc:
+        try:
+            store.save_transcript(
+                run_id=run.id, account_id=account_id,
+                transcript=messages, spend=spend.to_dict(),
+            )
+        except Exception:
+            pass
+        store.set_status(
+            run_id=run.id, account_id=account_id, status=RunStatus.failed,
+            error=f"{type(exc).__name__}: {exc}",
+        )
+        raise
+    finally:
+        reset_run_context(token)
