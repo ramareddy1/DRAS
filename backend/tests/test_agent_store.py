@@ -4,11 +4,12 @@ import threading
 import uuid
 
 import pytest
+from sqlalchemy import select
 
 from app.agent_runtime import store
 from app.db.base import session_scope
-from app.db.models import AccountORM
-from app.models import AutonomyLevel, RunEventType, RunStatus
+from app.db.models import AccountORM, RunORM
+from app.models import AutonomyLevel, Run, RunEventType, RunStatus
 
 
 @pytest.fixture()
@@ -192,20 +193,36 @@ def test_claim_suspended_is_single_use(account_id):
 def test_claim_suspended_under_real_contention_admits_exactly_one_thread(
     account_id,
 ):
-    """The double-POST guard under genuine concurrency, not just sequence.
+    """8 threads race to claim one suspended run — but this is NOT the
+    lock's regression guard; see the honest caveat below.
 
     `test_claim_suspended_is_single_use` above is purely sequential — two
     back-to-back calls in one thread, each in its own `session_scope()`
-    that fully commits before the next opens. A naive, unlocked
-    read-then-write `claim_suspended` would pass that test identically,
-    because there is never a second reader racing the first read. This
-    test forces genuine contention, following
+    that fully commits before the next opens. This test instead forces
+    genuine contention, following
     `test_concurrent_append_event_does_not_collide_on_seq`'s pattern: a
     `Barrier` releases N threads together, all racing to claim the SAME
-    suspended run — which is what actually exercises the
-    `SELECT ... FOR UPDATE` lock in `claim_suspended`. Exactly one thread
-    may come back with a non-None `Run`; every other thread must get
-    `None`, not a second, stale "success".
+    suspended run. When it passes, it does prove something real — that
+    under actual concurrent load, `claim_suspended` never lets two threads
+    both walk away with a claimed run (no double-claim was observed).
+
+    What it does *not* prove: that this outcome depends on
+    `.with_for_update()` being present. Verified by hand — with the lock
+    temporarily removed from `claim_suspended` and no artificial delay
+    added anywhere, this test still passed 5/5 runs on a local Postgres
+    instance. 8 Python threads under the GIL, each doing one fast local
+    round trip, apparently don't reliably interleave inside the narrow
+    read-then-write window a naive implementation would need to lose on.
+    So an accidental removal of the row lock would very likely leave this
+    test green — it is not a reliable regression guard for the lock.
+
+    The actual regression guard is
+    `test_claim_suspended_blocks_a_second_claimant_while_the_row_lock_is_held`
+    below, which controls the interleaving deterministically instead of
+    racing for it. This test is kept anyway because it exercises a
+    different, still-useful property under real thread contention (no
+    double-claim observed empirically across many concurrent callers), as
+    long as no one mistakes it for proof that the lock exists.
     """
     run = store.create_run(
         account_id=account_id, goal={}, autonomy=AutonomyLevel.assist, budget={},
@@ -245,6 +262,116 @@ def test_claim_suspended_under_real_contention_admits_exactly_one_thread(
     )
     assert winners[0].status is RunStatus.running
     assert winners[0].suspended_on is None
+
+
+def test_claim_suspended_blocks_a_second_claimant_while_the_row_lock_is_held(
+    account_id,
+):
+    """The lock's actual regression guard — controls the interleaving
+    instead of racing for it.
+
+    The threaded test above races 8 threads and hopes to land in the
+    narrow window where an unlocked `claim_suspended` would double-claim.
+    On this box that window is too narrow to hit by chance (see its
+    docstring). This test does not gamble on timing at all: it forces the
+    exact interleaving that proves the row lock is what's serializing
+    claimants.
+
+    The main thread performs the identical `SELECT ... FOR UPDATE` that
+    `claim_suspended` issues, flips the row to `running` inside that
+    transaction, and deliberately does **not** commit yet — the lock stays
+    held. A second thread then calls the real `store.claim_suspended` on
+    the same run. With a correctly-locked implementation, that call blocks
+    inside its own `SELECT ... FOR UPDATE` for as long as the main
+    transaction stays open — asserted directly below via
+    `thread.join(timeout=...)` returning because of the timeout, not
+    because the thread finished, so `thread.is_alive()` is still true.
+    Only after the main transaction commits (releasing the lock) does the
+    second thread wake up, see the row is now `running` rather than
+    `suspended`, and correctly return `None`.
+
+    Empirically confirmed (see the Task 7 fix report) that removing
+    `.with_for_update()` from `claim_suspended` makes this test fail
+    reliably, with no artificial delay anywhere — but not quite via the
+    mechanism this docstring first assumed. A plain, non-locking `SELECT`
+    never blocks in Postgres, so the second thread's read returns
+    instantly with the pre-commit snapshot (still `suspended`) rather than
+    blocking at `assert thread.is_alive()`. It only blocks later, inside
+    its own commit, because the implicit `UPDATE` SQLAlchemy issues to
+    persist `row.payload`/`row.status` still needs the row's write lock —
+    which the held-open main transaction is holding regardless of whether
+    it took that lock via `FOR UPDATE` or via being itself an uncommitted
+    writer. So `thread.is_alive()` reads `True` either way; it is a real,
+    useful sanity check (proves the second claimant genuinely goes through
+    Postgres locking rather than some out-of-band, lock-free path) but not
+    the discriminating assertion. The discriminator is the *value* the
+    second thread returns once it does unblock: it flushes the `run`
+    object it built from its stale pre-commit read (still "suspended" ->
+    "running"), unconditionally overwriting the row with no re-check of
+    the now-current status — a lost update — and hands back a non-`None`
+    `Run` as if it had won the claim, even though the main thread's
+    transaction already had. That is exactly the double-claim
+    `claim_suspended` exists to prevent, and it is what
+    `assert result == [None]` below catches. This is not luck: given the
+    main transaction is deliberately held open for the full 2-second join,
+    Postgres's read-committed semantics plus SQLAlchemy's unconditional
+    UPDATE make this outcome guaranteed on every run when the lock is
+    missing, not just probable.
+    """
+    run = store.create_run(
+        account_id=account_id, goal={}, autonomy=AutonomyLevel.assist, budget={},
+    )
+    store.set_status(
+        run_id=run.id, account_id=account_id, status=RunStatus.suspended,
+    )
+
+    result = []
+    errors = []
+
+    def claim_in_background() -> None:
+        try:
+            result.append(store.claim_suspended(run.id, account_id))
+        except Exception as exc:  # pragma: no cover - failure path
+            errors.append(exc)
+
+    thread = threading.Thread(target=claim_in_background)
+    try:
+        with session_scope() as s:
+            row = s.scalar(
+                select(RunORM).where(
+                    RunORM.id == run.id, RunORM.account_id == account_id,
+                ).with_for_update()
+            )
+            held = Run.model_validate(row.payload)
+            held.status = RunStatus.running
+            held.suspended_on = None
+            row.payload = held.model_dump(mode="json")
+            row.status = held.status.value
+
+            # The row lock is held by this open, uncommitted transaction.
+            # A second, correctly-implemented claimant must block here.
+            thread.start()
+            thread.join(timeout=2.0)
+            assert thread.is_alive(), (
+                "second claimant returned while the row lock was still "
+                "held open — claim_suspended is not blocking on "
+                "SELECT ... FOR UPDATE"
+            )
+        # Exiting the `with` block committed the transaction above,
+        # releasing the lock the second thread was blocked on.
+    finally:
+        # Always join, on every path (including assertion failure above),
+        # so a failing run can't leave a background thread — or the lock
+        # its transaction might still be holding — outliving this test.
+        thread.join(timeout=5.0)
+
+    assert not thread.is_alive(), (
+        "worker thread never finished after the lock was released"
+    )
+    assert errors == [], f"claim_suspended raised: {errors}"
+    assert result == [None], (
+        f"expected the second claimant to see `running` and decline, got {result}"
+    )
 
 
 def test_claim_suspended_refuses_a_run_that_never_suspended(account_id):
