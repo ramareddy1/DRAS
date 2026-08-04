@@ -11,7 +11,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Literal, Optional
 
 from fastapi import (
     APIRouter, BackgroundTasks, Depends, Header, HTTPException, Request,
@@ -132,3 +132,41 @@ async def stream_events(
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+class AnswerRequest(BaseModel):
+    decision: Literal["approve", "reject"]
+    note: Optional[str] = None
+
+
+@router.post("/runs/{run_id}/answer")
+def answer_run(
+    run_id: str,
+    body: AnswerRequest,
+    background_tasks: BackgroundTasks,
+    account: Account = Depends(require_account),
+):
+    """Answer a suspended run's gate and resume it.
+
+    The claim happens here, synchronously, and it is what makes a
+    double-POST safe: a claim succeeds at most once, so the second request
+    gets a 409 rather than a second background task executing the same
+    pending tool. Doing it in the background task instead would make the
+    409 unreportable — this handler would already have returned 200.
+    """
+    _require_flag()
+    if store.load_run(run_id, account.id) is None:
+        raise HTTPException(status_code=404, detail="Run not found.")
+
+    claimed = store.claim_suspended(run_id, account.id)
+    if claimed is None:
+        raise HTTPException(
+            status_code=409, detail="Run is not awaiting an answer.",
+        )
+
+    background_tasks.add_task(
+        runtime.resume_run,
+        run_id=run_id, account_id=account.id,
+        decision=body.decision, note=body.note,
+    )
+    return {"run_id": run_id, "status": RunStatus.running.value}

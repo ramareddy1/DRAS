@@ -3487,7 +3487,10 @@ So a loop-driven run at `auto` suspends for approval and the tool never runs. Ta
 
 Stated so nobody mistakes them for oversights:
 
-- **Resume is not wired.** Task 9 suspends and persists; the endpoint that answers a question and continues the run is Phase A follow-on work, and needs the mid-conversation system message mechanism (spec §4.6).
+- **Resume is wired.** Answering a gate and continuing a run landed in
+  [`2026-08-03-agent-resume.md`](2026-08-03-agent-resume.md). What remains
+  deferred is the abandonment reaper for runs that sit suspended forever —
+  `runs.suspended_at` exists for it.
 - **No planner yet.** The loop executes whatever the model calls. `plan_proposed` / `step_started` / `step_completed` are in the event enum but unemitted until the planner lands.
 - **Tier-2 tool search is not wired.** Only tier-1 tools are registered; `defer_loading` and pack tools arrive with Phase B.
 - **`render` is not implemented.** The block protocol (spec §3) is Phase D.

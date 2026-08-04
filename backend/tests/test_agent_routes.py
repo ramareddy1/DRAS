@@ -171,3 +171,61 @@ def test_run_is_not_readable_from_another_account(client, owner_headers, strange
     other_client, other_headers = stranger
     r = other_client.get(f"/api/agent/runs/{run_id}", headers=other_headers)
     assert r.status_code == 404
+
+
+def _suspended_run(client, headers):
+    """Create a run in `observe`, which gates before any tool executes."""
+    created = client.post(
+        "/api/agent/runs",
+        json={"goal": {"intent": "test"}, "autonomy": "observe"},
+        headers=headers,
+    )
+    assert created.status_code == 200
+    return created.json()["run_id"]
+
+
+def test_answering_a_run_that_is_not_suspended_is_409(client, owner_headers):
+    run_id = _suspended_run(client, owner_headers)
+    # The stubbed driver returns no tool calls, so this run finished rather
+    # than suspending — answering it is a conflict, not a 404.
+    r = client.post(
+        f"/api/agent/runs/{run_id}/answer",
+        json={"decision": "approve"}, headers=owner_headers,
+    )
+    assert r.status_code == 409
+
+
+def test_answer_rejects_an_unknown_decision(client, owner_headers):
+    run_id = _suspended_run(client, owner_headers)
+    r = client.post(
+        f"/api/agent/runs/{run_id}/answer",
+        json={"decision": "maybe"}, headers=owner_headers,
+    )
+    assert r.status_code == 422
+
+
+def test_answer_is_not_reachable_from_another_account(
+    client, owner_headers, stranger,
+):
+    run_id = _suspended_run(client, owner_headers)
+    other_client, other_headers = stranger
+    r = other_client.post(
+        f"/api/agent/runs/{run_id}/answer",
+        json={"decision": "approve"}, headers=other_headers,
+    )
+    assert r.status_code == 404
+
+
+def test_answer_is_404_when_the_flag_is_off(tmp_path, monkeypatch):
+    monkeypatch.delenv("RECONOPS_AGENT_RUNTIME", raising=False)
+    monkeypatch.setenv("RECONOPS_AUTH_DEV", "1")
+    monkeypatch.setenv("RECONOPS_DATA_DIR", str(tmp_path))
+    from app import main
+    importlib.reload(main)
+    with TestClient(main.app) as c:
+        headers = _account_headers(c, "answeroff@x.co")
+        r = c.post(
+            "/api/agent/runs/whatever/answer",
+            json={"decision": "approve"}, headers=headers,
+        )
+    assert r.status_code == 404
