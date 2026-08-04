@@ -2,8 +2,30 @@ from __future__ import annotations
 
 import importlib
 
+import boto3
+import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
+from moto import mock_aws
+
+from app.agent_runtime import artifacts, context, runtime, store
+from app.agent_runtime.runtime import ToolCall, Turn
+from app.models import AutonomyLevel, RunStatus
+
+BUCKET = "reconops-test-bucket"
+
+
+@pytest.fixture(autouse=True)
+def _s3_env(monkeypatch):
+    monkeypatch.setenv("RECONOPS_S3_BUCKET", BUCKET)
+    monkeypatch.setenv("RECONOPS_S3_REGION", "us-east-1")
+    monkeypatch.delenv("RECONOPS_S3_ENDPOINT_URL", raising=False)
+    monkeypatch.setenv("RECONOPS_S3_ACCESS_KEY_ID", "testing")
+    monkeypatch.setenv("RECONOPS_S3_SECRET_ACCESS_KEY", "testing")
+
+
+def _create_bucket() -> None:
+    boto3.client("s3", region_name="us-east-1").create_bucket(Bucket=BUCKET)
 
 
 def _login(client, email):
@@ -173,8 +195,31 @@ def test_run_is_not_readable_from_another_account(client, owner_headers, strange
     assert r.status_code == 404
 
 
-def _suspended_run(client, headers):
-    """Create a run in `observe`, which gates before any tool executes."""
+class ScriptedDriver:
+    """A driver that plays back fixed turns — see test_agent_resume.py."""
+
+    def __init__(self, turns):
+        self._turns = list(turns)
+
+    def next_turn(self, *, system, messages, tools, task_budget_tokens):
+        if not self._turns:
+            return Turn(text="done", tool_calls=[])
+        return self._turns.pop(0)
+
+
+def _finished_run(client, headers):
+    """Create a run in `observe` — which finishes here, not suspends.
+
+    `observe` gates before any tool executes, so on a real driver this
+    would suspend. But this module's `client` fixture sets
+    `RECONOPS_STUB_LLM=1`, and under that flag `AnthropicDriver.next_turn`
+    unconditionally returns zero tool calls — there is never a call to
+    gate, so the run runs straight through to `done`. That is still useful
+    here: a finished run is exactly a run `claim_suspended` refuses, which
+    is all the 409/422/cross-account tests below need — none of them
+    assert anything about genuine suspension. A genuinely suspended run is
+    built separately, by `_suspend_via_store` below.
+    """
     created = client.post(
         "/api/agent/runs",
         json={"goal": {"intent": "test"}, "autonomy": "observe"},
@@ -184,10 +229,49 @@ def _suspended_run(client, headers):
     return created.json()["run_id"]
 
 
+def _suspend_via_store(account_id):
+    """Drive a run to a genuine suspend, directly through store/runtime.
+
+    A run created through the HTTP API can never suspend under this
+    module's stub driver (see `_finished_run`'s docstring), so this
+    builds one the way `test_agent_resume.py` builds its fixtures instead:
+    create the run and its dataset directly, then drive one gated tool
+    call through `runtime.execute_run` with a `ScriptedDriver` that
+    actually proposes a call. `observe` gates even a read, which is the
+    cheapest way to reach a suspend.
+    """
+    run = store.create_run(
+        account_id=account_id, goal={"intent": "look"},
+        autonomy=AutonomyLevel.observe, budget={"tool_call_cap": 10},
+    )
+    token = context.set_run_context(
+        context.RunContext(run_id=run.id, account_id=account_id),
+    )
+    try:
+        ds = artifacts.put_dataset(
+            run_id=run.id, account_id=account_id,
+            df=pd.DataFrame({"x": [1, 2, 3]}), label="d",
+        )
+    finally:
+        context.reset_run_context(token)
+
+    driver = ScriptedDriver([
+        Turn(text=None, tool_calls=[
+            ToolCall(id="t1", name="profile_schema", input={"dataset_id": ds}),
+        ]),
+        Turn(text="all done", tool_calls=[]),
+    ])
+    finished = runtime.execute_run(
+        run_id=run.id, account_id=account_id, driver=driver,
+    )
+    assert finished.status is RunStatus.suspended
+    return run.id
+
+
 def test_answering_a_run_that_is_not_suspended_is_409(client, owner_headers):
-    run_id = _suspended_run(client, owner_headers)
-    # The stubbed driver returns no tool calls, so this run finished rather
-    # than suspending — answering it is a conflict, not a 404.
+    run_id = _finished_run(client, owner_headers)
+    # This run finished rather than suspending — answering it is a
+    # conflict, not a 404.
     r = client.post(
         f"/api/agent/runs/{run_id}/answer",
         json={"decision": "approve"}, headers=owner_headers,
@@ -196,7 +280,7 @@ def test_answering_a_run_that_is_not_suspended_is_409(client, owner_headers):
 
 
 def test_answer_rejects_an_unknown_decision(client, owner_headers):
-    run_id = _suspended_run(client, owner_headers)
+    run_id = _finished_run(client, owner_headers)
     r = client.post(
         f"/api/agent/runs/{run_id}/answer",
         json={"decision": "maybe"}, headers=owner_headers,
@@ -207,7 +291,7 @@ def test_answer_rejects_an_unknown_decision(client, owner_headers):
 def test_answer_is_not_reachable_from_another_account(
     client, owner_headers, stranger,
 ):
-    run_id = _suspended_run(client, owner_headers)
+    run_id = _finished_run(client, owner_headers)
     other_client, other_headers = stranger
     r = other_client.post(
         f"/api/agent/runs/{run_id}/answer",
@@ -229,3 +313,85 @@ def test_answer_is_404_when_the_flag_is_off(tmp_path, monkeypatch):
             json={"decision": "approve"}, headers=headers,
         )
     assert r.status_code == 404
+
+
+@mock_aws
+def test_answering_a_suspended_run_returns_200_and_resumes_it(
+    client, owner_headers,
+):
+    """The 200 path — structurally impossible via HTTP-created runs.
+
+    Built directly through the store layer (`_suspend_via_store`), then
+    answered through the real route. `TestClient` runs `BackgroundTasks`
+    before returning the response (see
+    `test_events_endpoint_supports_after_cursor` above), so asserting the
+    run's terminal status proves `resume_run` actually ran to completion in
+    the background task — not merely that the route returned 200. Approve
+    dispatches the pending `profile_schema` call for real, then the stub
+    driver's next turn has no tool calls, so the loop breaks and the run
+    reaches `done`.
+    """
+    account_id = owner_headers["X-Account-Id"]
+    _create_bucket()
+    run_id = _suspend_via_store(account_id)
+
+    r = client.post(
+        f"/api/agent/runs/{run_id}/answer",
+        json={"decision": "approve"}, headers=owner_headers,
+    )
+    assert r.status_code == 200
+    assert r.json() == {"run_id": run_id, "status": "running"}
+
+    finished = client.get(f"/api/agent/runs/{run_id}", headers=owner_headers)
+    assert finished.status_code == 200
+    assert finished.json()["status"] == "done"
+
+    events = client.get(
+        f"/api/agent/runs/{run_id}/events", headers=owner_headers,
+    ).json()["events"]
+    returned = [
+        e for e in events
+        if e["type"] == "tool_returned"
+        and e["payload"].get("tool") == "profile_schema"
+    ]
+    assert len(returned) == 1
+
+
+@mock_aws
+def test_double_answering_a_suspended_run_is_one_200_and_one_409(
+    client, owner_headers,
+):
+    """The route-level half of the concurrency guarantee.
+
+    `claim_suspended`'s lock is proven under genuine thread contention at
+    the store layer (test_agent_store.py); this proves the route wires
+    that guarantee through end to end: a sequential double-POST produces
+    exactly one 200 and one 409, and the pending tool executes exactly
+    once — not twice.
+    """
+    account_id = owner_headers["X-Account-Id"]
+    _create_bucket()
+    run_id = _suspend_via_store(account_id)
+
+    first = client.post(
+        f"/api/agent/runs/{run_id}/answer",
+        json={"decision": "approve"}, headers=owner_headers,
+    )
+    assert first.status_code == 200
+    assert first.json() == {"run_id": run_id, "status": "running"}
+
+    second = client.post(
+        f"/api/agent/runs/{run_id}/answer",
+        json={"decision": "approve"}, headers=owner_headers,
+    )
+    assert second.status_code == 409
+
+    events = client.get(
+        f"/api/agent/runs/{run_id}/events", headers=owner_headers,
+    ).json()["events"]
+    returned = [
+        e for e in events
+        if e["type"] == "tool_returned"
+        and e["payload"].get("tool") == "profile_schema"
+    ]
+    assert len(returned) == 1

@@ -189,6 +189,64 @@ def test_claim_suspended_is_single_use(account_id):
     assert store.claim_suspended(run.id, account_id) is None
 
 
+def test_claim_suspended_under_real_contention_admits_exactly_one_thread(
+    account_id,
+):
+    """The double-POST guard under genuine concurrency, not just sequence.
+
+    `test_claim_suspended_is_single_use` above is purely sequential — two
+    back-to-back calls in one thread, each in its own `session_scope()`
+    that fully commits before the next opens. A naive, unlocked
+    read-then-write `claim_suspended` would pass that test identically,
+    because there is never a second reader racing the first read. This
+    test forces genuine contention, following
+    `test_concurrent_append_event_does_not_collide_on_seq`'s pattern: a
+    `Barrier` releases N threads together, all racing to claim the SAME
+    suspended run — which is what actually exercises the
+    `SELECT ... FOR UPDATE` lock in `claim_suspended`. Exactly one thread
+    may come back with a non-None `Run`; every other thread must get
+    `None`, not a second, stale "success".
+    """
+    run = store.create_run(
+        account_id=account_id, goal={}, autonomy=AutonomyLevel.assist, budget={},
+    )
+    store.set_status(
+        run_id=run.id, account_id=account_id, status=RunStatus.suspended,
+    )
+
+    n_threads = 8
+    barrier = threading.Barrier(n_threads)
+    results = []
+    errors = []
+    lock = threading.Lock()
+
+    def worker(i: int) -> None:
+        try:
+            barrier.wait()  # maximize contention: all threads race together
+            claimed = store.claim_suspended(run.id, account_id)
+            with lock:
+                results.append(claimed)
+        except Exception as exc:  # pragma: no cover - failure path
+            with lock:
+                errors.append(exc)
+
+    threads = [threading.Thread(target=worker, args=(i,)) for i in range(n_threads)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert errors == [], f"claim_suspended raised in {len(errors)} thread(s): {errors}"
+    assert len(results) == n_threads
+
+    winners = [r for r in results if r is not None]
+    assert len(winners) == 1, (
+        f"expected exactly one thread to claim the run, got {len(winners)}"
+    )
+    assert winners[0].status is RunStatus.running
+    assert winners[0].suspended_on is None
+
+
 def test_claim_suspended_refuses_a_run_that_never_suspended(account_id):
     run = store.create_run(
         account_id=account_id, goal={}, autonomy=AutonomyLevel.assist, budget={},
