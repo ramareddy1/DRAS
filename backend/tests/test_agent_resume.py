@@ -368,3 +368,80 @@ def test_a_malformed_transcript_fails_loudly_without_wedging_the_run(account_id)
     assert reloaded.error is not None
     events = store.events_since(run_id=run.id, account_id=account_id)
     assert not any(e.type is RunEventType.question_answered for e in events)
+
+
+@mock_aws
+def test_re_proposing_a_rejected_call_aborts_rather_than_gating_again(
+    account_id,
+):
+    """Reject has to mean something.
+
+    Without this the model re-proposes, the gate fires, the user rejects
+    again — and the run spends its whole budget on a loop the user already
+    refused. `MAX_ITERATIONS` would eventually stop it, but only after
+    paying for every turn.
+    """
+    boto3.client("s3", region_name="us-east-1").create_bucket(Bucket=BUCKET)
+    run_id, ds = _suspend_on_profile(account_id)
+    store.claim_suspended(run_id, account_id)
+
+    # The model immediately asks for the very call that was just refused.
+    driver = ScriptedDriver([
+        Turn(text=None, tool_calls=[
+            ToolCall(id="t2", name="profile_schema", input={"dataset_id": ds}),
+        ]),
+    ])
+    finished = runtime.resume_run(
+        run_id=run_id, account_id=account_id, decision="reject",
+        driver=driver,
+    )
+
+    assert finished.status is RunStatus.aborted
+    assert "rejected" in (finished.error or "")
+
+    events = store.events_since(run_id=run_id, account_id=account_id)
+    # It aborted instead of asking a second time.
+    assert len([
+        e for e in events if e.type is RunEventType.question_asked
+    ]) == 1
+
+
+@mock_aws
+def test_a_different_call_still_reaches_the_gate_after_a_rejection(account_id):
+    """The guard is per-call, not a blanket freeze on the run.
+
+    The run stays in `observe`, where every call gates — so a *different*
+    call suspending again is the proof that the guard matched on arguments
+    rather than freezing the run outright.
+    """
+    boto3.client("s3", region_name="us-east-1").create_bucket(Bucket=BUCKET)
+    run_id, _ = _suspend_on_profile(account_id)
+    store.claim_suspended(run_id, account_id)
+
+    token = context.set_run_context(
+        context.RunContext(run_id=run_id, account_id=account_id),
+    )
+    try:
+        other = artifacts.put_dataset(
+            run_id=run_id, account_id=account_id,
+            df=pd.DataFrame({"y": [1, 2]}), label="other",
+        )
+    finally:
+        context.reset_run_context(token)
+
+    driver = ScriptedDriver([
+        Turn(text=None, tool_calls=[
+            ToolCall(
+                id="t2", name="profile_schema",
+                input={"dataset_id": other},
+            ),
+        ]),
+    ])
+    finished = runtime.resume_run(
+        run_id=run_id, account_id=account_id, decision="reject",
+        driver=driver,
+    )
+
+    # Same tool, different arguments → not the refused call, so it gates
+    # normally instead of aborting on the guard.
+    assert finished.status is RunStatus.suspended

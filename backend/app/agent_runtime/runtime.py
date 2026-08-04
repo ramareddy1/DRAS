@@ -300,6 +300,22 @@ def _drive(
         if not turn.tool_calls:
             break
 
+        # A refused call must not come back around. Re-gating it would ask
+        # the user the same question again and spend the run's budget on a
+        # loop they already declined.
+        for call in turn.tool_calls:
+            if _was_rejected(run, call):
+                reason = f"call already rejected by the user: {call.name}"
+                store.append_event(
+                    run=run, type=RunEventType.run_finished,
+                    payload={"reason": "repeat_of_rejected_call",
+                             "tool": call.name},
+                )
+                return _finish_run(
+                    run=run, account_id=account_id, messages=messages,
+                    spend=spend, status=RunStatus.aborted, error=reason,
+                )
+
         # Pass 1 — gate the whole turn before executing any of it.
         # Suspension is all-or-nothing per turn: if a later call needs
         # approval, an earlier read must not have already run. Otherwise the
@@ -441,6 +457,18 @@ def execute_run(
 
 APPROVE = "approve"
 REJECT = "reject"
+
+
+def _was_rejected(run: Run, call: ToolCall) -> bool:
+    """Has the user already refused this exact call in this run?
+
+    Matches on name and arguments together: refusing `run_reconciliation`
+    on one pair of datasets should not block it on a different pair.
+    """
+    return any(
+        entry.get("tool") == call.name and entry.get("input") == call.input
+        for entry in run.rejected_calls
+    )
 
 
 def _pending_calls(messages: List[Dict[str, Any]]) -> List[ToolCall]:
