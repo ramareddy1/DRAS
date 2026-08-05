@@ -1,0 +1,959 @@
+<!DOCTYPE html>
+<!-- Reckon — AI-native UI prototype for the agentic platform plan.
+     Companion to docs/plans/2026-07-30-agentic-platform.md (§7).
+     Fully static, simulated data only — safe to deploy publicly. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reckon — your operational data agent (prototype)</title>
+<meta name="description" content="AI-native prototype: one conversational surface, visible plans, tool-level transparency, an ontology that learns your domain, and autonomy you grant — not configure.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%234a3aa7'/%3E%3Cpath d='M9 23V9h7.2c3 0 5 1.7 5 4.3 0 2-1.2 3.4-3 4l3.4 5.7h-3.3l-3-5.2H11.9V23z' fill='%23fcfcfb'/%3E%3C/svg%3E">
+<style>
+/* ---------- tokens ---------- */
+:root{
+  color-scheme:light;
+  --page:#f9f9f7; --surface:#fcfcfb; --surface-2:#f0efec;
+  --ink:#0b0b0b; --ink-2:#52514e; --muted:#898781;
+  --line:#e1e0d9; --ring:rgba(11,11,11,.10);
+  --accent:#4a3aa7; --on-accent:#fcfcfb;
+  --accent-soft:rgba(74,58,167,.07); --accent-line:rgba(74,58,167,.28);
+  --good:#0ca30c; --good-text:#006300; --warn:#fab219; --serious:#ec835a; --crit:#d03b3b;
+  --chart:#2a78d6;
+  --serif:"Iowan Old Style","Palatino Linotype",Palatino,Charter,Georgia,serif;
+  --sans:system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:ui-monospace,"Cascadia Code",Consolas,"SF Mono",Menlo,monospace;
+  --shadow:0 1px 2px rgba(11,11,11,.05),0 4px 16px rgba(11,11,11,.05);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --page:#0d0d0d; --surface:#1a1a19; --surface-2:#232321;
+    --ink:#ffffff; --ink-2:#c3c2b7; --muted:#898781;
+    --line:#2c2c2a; --ring:rgba(255,255,255,.10);
+    --accent:#9085e9; --on-accent:#16123a;
+    --accent-soft:rgba(144,133,233,.10); --accent-line:rgba(144,133,233,.35);
+    --good-text:#0ca30c; --chart:#3987e5;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 4px 16px rgba(0,0,0,.3);
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --page:#0d0d0d; --surface:#1a1a19; --surface-2:#232321;
+  --ink:#ffffff; --ink-2:#c3c2b7; --muted:#898781;
+  --line:#2c2c2a; --ring:rgba(255,255,255,.10);
+  --accent:#9085e9; --on-accent:#16123a;
+  --accent-soft:rgba(144,133,233,.10); --accent-line:rgba(144,133,233,.35);
+  --good-text:#0ca30c; --chart:#3987e5;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 4px 16px rgba(0,0,0,.3);
+}
+
+/* ---------- base ---------- */
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{
+  font:15px/1.55 var(--sans); color:var(--ink); background:var(--page);
+  -webkit-font-smoothing:antialiased;
+}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+button:focus-visible,input:focus-visible,summary:focus-visible,a:focus-visible{
+  outline:2px solid var(--accent); outline-offset:2px; border-radius:4px;
+}
+::selection{background:var(--accent-soft)}
+
+/* ---------- app frame ---------- */
+.app{display:grid;grid-template-columns:236px minmax(0,1fr) 296px;height:100dvh}
+.rail{background:var(--surface);border-right:1px solid var(--line);padding:18px 16px;
+  overflow-y:auto;display:flex;flex-direction:column;gap:22px}
+.rail-right{border-right:0;border-left:1px solid var(--line)}
+.main{display:flex;flex-direction:column;min-width:0}
+
+/* left rail */
+.brand{display:flex;align-items:center;gap:10px}
+.brand-mark{width:30px;height:30px;border-radius:8px;background:var(--accent);
+  color:var(--on-accent);display:grid;place-items:center;
+  font:700 17px var(--serif);flex:none}
+.brand b{font:600 17px var(--serif);letter-spacing:.01em}
+.brand small{display:block;color:var(--muted);font-size:11px;margin-top:1px}
+.rail h3{margin:0 0 8px;font:600 10.5px var(--sans);letter-spacing:.09em;
+  text-transform:uppercase;color:var(--muted)}
+.rail-item{display:flex;align-items:center;gap:8px;padding:5px 0;font-size:13px;color:var(--ink-2)}
+.rail-item .dot{width:7px;height:7px;border-radius:50%;flex:none}
+.dot.ok{background:var(--good)} .dot.off{background:var(--line)}
+.rail-item small{margin-left:auto;color:var(--muted);font-size:11px}
+.pack{border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:var(--page)}
+.pack b{font-size:13px;display:block}
+.pack span{font-size:11.5px;color:var(--muted)}
+.pack .yours{display:inline-block;margin-top:6px;font-size:11px;color:var(--accent);
+  background:var(--accent-soft);border:1px solid var(--accent-line);border-radius:99px;padding:1px 8px}
+.runs .rail-item{font-family:var(--mono);font-size:11.5px}
+
+/* topbar */
+.topbar{display:flex;align-items:center;gap:10px;padding:12px 22px;
+  border-bottom:1px solid var(--line);background:var(--surface)}
+.topbar .crumb{font:600 14px var(--serif)}
+.demo-badge{font-size:11px;color:var(--ink-2);background:var(--surface-2);
+  border:1px solid var(--line);border-radius:99px;padding:2px 10px}
+.topbar .spacer{flex:1}
+.icon-btn{padding:6px 10px;border:1px solid var(--line);border-radius:8px;
+  background:var(--surface);font-size:12.5px;color:var(--ink-2)}
+.icon-btn:hover{border-color:var(--muted)}
+#memoryBtn{display:none}
+
+/* ---------- stream ---------- */
+.stream{flex:1;overflow-y:auto;padding:26px 22px 12px;scroll-behavior:smooth}
+@media (prefers-reduced-motion:reduce){.stream{scroll-behavior:auto}}
+.stream-inner{max-width:700px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
+
+.msg-user{align-self:flex-end;max-width:85%;background:var(--accent);color:var(--on-accent);
+  padding:9px 14px;border-radius:14px 14px 4px 14px;font-size:14.5px}
+.msg-file{align-self:flex-end;font-family:var(--mono);font-size:12.5px;color:var(--ink-2);
+  border:1px dashed var(--muted);border-radius:10px;padding:8px 12px;background:var(--surface)}
+
+.agent-line{font-family:var(--serif);font-size:16px;line-height:1.6;max-width:62ch}
+.agent-line .cite{font:500 11px var(--mono);color:var(--accent);background:var(--accent-soft);
+  border:1px solid var(--accent-line);border-radius:6px;padding:0 6px;white-space:nowrap;cursor:pointer}
+
+.block{background:var(--surface);border:1px solid var(--line);border-radius:12px;
+  box-shadow:var(--shadow);overflow:hidden}
+.block-head{display:flex;align-items:center;gap:8px;padding:9px 14px;
+  border-bottom:1px solid var(--line);background:var(--page)}
+.eyebrow{font:600 10px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.block-head .title{font-size:13px;color:var(--ink-2)}
+.block-body{padding:13px 16px}
+
+/* plan */
+.plan-step{display:flex;gap:10px;align-items:baseline;padding:3.5px 0;font-size:13.5px;color:var(--ink-2)}
+.plan-step .n{font:600 11px var(--mono);color:var(--muted);width:16px;flex:none}
+.plan-step.done .n{color:var(--good-text)}
+.plan-step.done{color:var(--muted)}
+.plan-meta{margin-top:10px;padding-top:10px;border-top:1px dashed var(--line);
+  display:flex;gap:14px;flex-wrap:wrap;font:11.5px var(--mono);color:var(--muted)}
+.plan-approve{margin-top:12px}
+
+/* tool register — the ledger voice */
+.register{font:12.5px/2 var(--mono);color:var(--ink-2)}
+.reg-line{display:flex;align-items:baseline;gap:8px;opacity:0;transform:translateY(2px);
+  transition:opacity .25s,transform .25s}
+.reg-line.in{opacity:1;transform:none}
+@media (prefers-reduced-motion:reduce){.reg-line{transition:none}}
+.reg-line .tool{color:var(--ink)}
+.reg-line .lead{flex:1;border-bottom:1px dotted var(--line);transform:translateY(-4px)}
+.reg-line .out{white-space:nowrap}
+.reg-line .t{color:var(--muted);width:44px;text-align:right;flex:none}
+.reg-note{font-size:11.5px;color:var(--accent);padding-left:2px;margin:-2px 0 4px}
+
+/* question */
+.block.q{border-color:var(--accent-line)}
+.block.q .block-head{background:var(--accent-soft)}
+.choices{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.choice{border:1px solid var(--accent-line);color:var(--accent);border-radius:99px;
+  padding:5px 14px;font-size:13px;background:var(--surface)}
+.choice:hover{background:var(--accent-soft)}
+.choice.ghost{border-color:var(--line);color:var(--ink-2)}
+.q-resolved{font-size:12.5px;color:var(--muted);margin-top:8px}
+.q-explain{font-size:12.5px;color:var(--ink-2);border-left:2px solid var(--accent-line);
+  padding:2px 0 2px 10px;margin-top:10px}
+
+/* summary */
+.hero-line{font:600 21px var(--serif);letter-spacing:.005em;margin:0 0 2px}
+.hero-sub{color:var(--ink-2);font-size:13px;margin:0 0 12px}
+.tiles{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+.tile{flex:1 1 120px;background:var(--page);border:1px solid var(--line);border-radius:10px;padding:9px 12px}
+.tile .v{font:600 19px var(--serif);font-variant-numeric:tabular-nums}
+.tile .k{font-size:11px;color:var(--muted);letter-spacing:.04em;text-transform:uppercase}
+.verdicts{display:flex;gap:14px;flex-wrap:wrap;font-size:12.5px;color:var(--ink-2)}
+.verdicts b{font-variant-numeric:tabular-nums}
+.vd{display:flex;align-items:center;gap:6px}
+.vd .sw{width:9px;height:9px;border-radius:3px;flex:none}
+
+/* audit line */
+.audit summary{list-style:none;cursor:pointer;font:12.5px var(--mono);color:var(--muted);
+  padding:8px 14px;display:flex;gap:8px;align-items:baseline}
+.audit summary::-webkit-details-marker{display:none}
+.audit summary .lead{flex:1;border-bottom:1px dotted var(--line);transform:translateY(-4px)}
+.audit summary .act{color:var(--accent)}
+.audit[open] summary .act .cl{display:inline} .audit .cl{display:none}
+.audit-body{padding:2px 16px 12px;font-size:12.5px;color:var(--ink-2)}
+.audit-body .rule{display:flex;gap:8px;align-items:baseline;padding:3px 0}
+.audit-body .rule .lead{flex:1;border-bottom:1px dotted var(--line);transform:translateY(-4px)}
+.audit-body .prov{font-size:11.5px;color:var(--muted);font-style:italic}
+
+/* triage card */
+.block.triage{border-left:3px solid var(--warn)}
+.block.triage.serious{border-left-color:var(--serious)}
+.tri-top{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.tri-top b{font-size:14px}
+.tri-amt{font:600 14px var(--mono);font-variant-numeric:tabular-nums;margin-left:auto}
+.badge{font-size:10.5px;border:1px solid var(--line);border-radius:99px;padding:1px 8px;color:var(--muted)}
+.tri-why{font-size:13px;color:var(--ink-2);margin:7px 0 10px;max-width:60ch}
+.tri-acts{display:flex;gap:8px;flex-wrap:wrap}
+.btn{border:1px solid var(--line);border-radius:8px;padding:5px 12px;font-size:12.5px;color:var(--ink-2);background:var(--surface)}
+.btn:hover{border-color:var(--muted)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.btn.primary:hover{filter:brightness(1.08)}
+.reason-row{display:flex;gap:8px;margin-top:10px}
+.reason-row input{flex:1;border:1px solid var(--line);border-radius:8px;padding:6px 10px;
+  font:13px var(--sans);background:var(--page);color:var(--ink)}
+.resolved-note{font-size:12.5px;color:var(--good-text);margin-top:8px}
+
+/* proposal */
+.block.proposal{border-color:var(--accent-line)}
+.prop-kind{color:var(--accent)}
+.prop-name{font:600 15px var(--serif);margin:0 0 2px}
+.prov{font-size:11.5px;color:var(--muted);font-style:italic}
+.prop-steps{font:12px/1.9 var(--mono);color:var(--ink-2);margin:9px 0 0;padding:0;list-style:none}
+.prop-steps .c{color:var(--accent)}
+.prop-acts{display:flex;gap:8px;margin-top:12px;align-items:center}
+.prop-acts .hint{font-size:11.5px;color:var(--muted)}
+
+/* concept card */
+.concept-grid{display:grid;grid-template-columns:1fr 1fr;gap:4px 18px;font-size:12.5px;color:var(--ink-2);margin-top:6px}
+.concept-grid dt{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.05em}
+.concept-grid dd{margin:0 0 6px;font-family:var(--mono);font-size:12px}
+
+/* ledger table (answer breakdown) */
+.ledger{font:13px/2.1 var(--mono);margin-top:10px;color:var(--ink-2)}
+.ledger .row{display:flex;gap:8px;align-items:baseline}
+.ledger .lead{flex:1;border-bottom:1px dotted var(--line);transform:translateY(-5px)}
+.ledger .amt{font-variant-numeric:tabular-nums;white-space:nowrap}
+.ledger .total{border-top:1px solid var(--line);color:var(--ink);font-weight:600}
+
+/* memory summary block (in stream) */
+.mem-cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px}
+.mem-cols h4{margin:0 0 6px;font:600 11px var(--sans);letter-spacing:.07em;text-transform:uppercase;color:var(--muted)}
+.mem-cols li{font-size:12.5px;color:var(--ink-2);margin:0 0 6px}
+.mem-cols ul{margin:0;padding-left:16px}
+
+/* thinking dots */
+.thinking{display:flex;gap:4px;padding:6px 2px}
+.thinking i{width:5px;height:5px;border-radius:50%;background:var(--muted);animation:pulse 1s infinite}
+.thinking i:nth-child(2){animation-delay:.18s}.thinking i:nth-child(3){animation-delay:.36s}
+@keyframes pulse{0%,100%{opacity:.25}50%{opacity:1}}
+@media (prefers-reduced-motion:reduce){.thinking i{animation:none;opacity:.6}}
+
+/* composer */
+.composer{border-top:1px solid var(--line);background:var(--surface);padding:12px 22px 16px}
+.composer-inner{max-width:700px;margin:0 auto}
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.chip{border:1px solid var(--line);border-radius:99px;padding:5px 13px;font-size:12.5px;
+  color:var(--ink-2);background:var(--page)}
+.chip:hover{border-color:var(--accent-line);color:var(--accent)}
+.input-row{display:flex;gap:8px}
+.input-row input{flex:1;border:1px solid var(--line);border-radius:12px;padding:11px 15px;
+  font:14.5px var(--sans);background:var(--page);color:var(--ink)}
+.input-row input::placeholder{color:var(--muted)}
+.send{background:var(--accent);color:var(--on-accent);border-radius:12px;padding:0 18px;font-weight:600}
+.send:hover{filter:brightness(1.08)}
+.composer .fine{font-size:11px;color:var(--muted);margin:8px 2px 0}
+
+/* ---------- right rail ---------- */
+.trust{border:1px solid var(--line);border-radius:12px;padding:13px 14px;background:var(--page)}
+.trust .k{font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
+.trust .v{font:600 30px var(--serif);line-height:1.15}
+.trust .v small{font-size:14px;color:var(--muted);font-family:var(--sans)}
+.trust svg{display:block;width:100%;height:38px;margin:6px 0 4px}
+.trust .counters{font:11px var(--mono);color:var(--muted)}
+.dial{display:grid;grid-template-columns:1fr 1fr 1fr;border:1px solid var(--line);
+  border-radius:9px;overflow:hidden;margin-top:10px}
+.dial button{padding:6px 0;font-size:12px;color:var(--muted);background:var(--surface)}
+.dial button+button{border-left:1px solid var(--line)}
+.dial button.on{background:var(--accent);color:var(--on-accent);font-weight:600}
+.dial-note{font-size:11.5px;color:var(--muted);margin-top:7px;line-height:1.45}
+
+.mem-group{border-bottom:1px solid var(--line);padding-bottom:8px}
+.mem-group summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:6px;
+  padding:7px 0;font-size:13px;color:var(--ink)}
+.mem-group summary::-webkit-details-marker{display:none}
+.mem-group summary .count{margin-left:auto;font:11.5px var(--mono);color:var(--muted)}
+.mem-group summary .tw{color:var(--muted);font-size:10px;transition:transform .15s}
+.mem-group[open] summary .tw{transform:rotate(90deg)}
+.mem-item{position:relative;font-size:12.5px;color:var(--ink-2);padding:4px 22px 4px 10px;
+  border-left:2px solid var(--line);margin:0 0 7px}
+.mem-item .prov{display:block}
+.mem-item .revoke{position:absolute;right:0;top:2px;color:var(--muted);font-size:14px;
+  opacity:0;padding:2px 6px}
+.mem-item:hover .revoke,.mem-item:focus-within .revoke{opacity:1}
+.mem-item .revoke:hover{color:var(--crit)}
+.rail-fine{font-size:11px;color:var(--muted);line-height:1.5;margin-top:auto;padding-top:14px}
+.rail-fine a{color:var(--accent)}
+
+/* toast */
+.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(8px);
+  background:var(--ink);color:var(--page);padding:9px 18px;border-radius:99px;font-size:13px;
+  opacity:0;pointer-events:none;transition:opacity .25s,transform .25s;z-index:50;max-width:88vw}
+.toast.show{opacity:1;transform:translateX(-50%)}
+@media (prefers-reduced-motion:reduce){.toast{transition:none}}
+
+/* status icons */
+.si{font-size:11px;font-weight:700}
+.si.good{color:var(--good-text)} .si.warn{color:var(--warn)} .si.serious{color:var(--serious)}
+
+/* ---------- responsive ---------- */
+@media (max-width:1160px){
+  .app{grid-template-columns:minmax(0,1fr) 296px}
+  .rail-left{display:none}
+  #memoryBtn{display:inline-block}
+}
+@media (max-width:860px){
+  .app{grid-template-columns:minmax(0,1fr)}
+  .rail-right{display:none;position:fixed;right:0;top:0;bottom:0;width:min(320px,88vw);
+    z-index:40;box-shadow:var(--shadow)}
+  .rail-right.open{display:flex}
+}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ══ left rail: workspace ══ -->
+  <aside class="rail rail-left" aria-label="Workspace">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true">R</div>
+      <div><b>Reckon</b><small>operational data agent</small></div>
+    </div>
+
+    <div>
+      <h3>Workspace</h3>
+      <div class="rail-item"><span class="dot ok"></span>Meridian Goods<small>owner</small></div>
+    </div>
+
+    <div>
+      <h3>Domain pack</h3>
+      <div class="pack">
+        <b>E-commerce Recon</b>
+        <span>v4 · curated ontology, 41 concepts</span><br>
+        <span class="yours">+ 5 concepts you taught it</span>
+      </div>
+    </div>
+
+    <div>
+      <h3>Connections</h3>
+      <div class="rail-item"><span class="dot ok"></span>Shopify<small>synced 2h ago</small></div>
+      <div class="rail-item"><span class="dot ok"></span>Stripe<small>live</small></div>
+      <div class="rail-item"><span class="dot off"></span>3PL portal<small>files only</small></div>
+    </div>
+
+    <div class="runs">
+      <h3>Recent runs</h3>
+      <div class="rail-item">Jun close<small>98.9%</small></div>
+      <div class="rail-item">May close<small>97.1%</small></div>
+      <div class="rail-item">Inventory chk<small>94.0%</small></div>
+    </div>
+
+    <p class="rail-fine">Design prototype · simulated data.<br>
+    Architecture: <a href="https://github.com" onclick="return false" title="docs/plans/2026-07-30-agentic-platform.md">agentic-platform plan</a></p>
+  </aside>
+
+  <!-- ══ center: the surface ══ -->
+  <main class="main">
+    <header class="topbar">
+      <span class="crumb">Meridian Goods</span>
+      <span class="demo-badge">Prototype — simulated agent</span>
+      <span class="spacer"></span>
+      <button class="icon-btn" id="memoryBtn" aria-expanded="false">Memory</button>
+      <button class="icon-btn" id="themeBtn" aria-label="Toggle color theme">◐ Theme</button>
+    </header>
+
+    <div class="stream" id="stream">
+      <div class="stream-inner" id="streamInner" aria-live="polite"></div>
+    </div>
+
+    <footer class="composer">
+      <div class="composer-inner">
+        <div class="chips" id="chips" role="group" aria-label="Suggested actions"></div>
+        <form class="input-row" id="composeForm">
+          <input id="composeInput" type="text" autocomplete="off"
+            placeholder="Ask anything, drop a file, or state a goal…" aria-label="Message the agent">
+          <button class="send" type="submit">Send</button>
+        </form>
+        <p class="fine">Every number comes from a deterministic tool — the agent plans, explains, and proposes; it never computes money.</p>
+      </div>
+    </footer>
+  </main>
+
+  <!-- ══ right rail: trust + memory ══ -->
+  <aside class="rail rail-right" id="rightRail" aria-label="Trust and memory">
+    <div class="trust">
+      <div class="k">Trust-adjusted autonomy</div>
+      <div class="v"><span id="scoreVal">78</span><small>% · 8 runs</small></div>
+      <svg id="spark" viewBox="0 0 260 38" preserveAspectRatio="none" role="img"
+           aria-label="Autonomy score trend across the last eight runs, rising from 52 to 78 percent"></svg>
+      <div class="counters">override 3% · revoked 1 · plan aborts 0</div>
+      <div class="dial" role="group" aria-label="Autonomy level">
+        <button data-mode="observe">Observe</button>
+        <button data-mode="assist" class="on">Assist</button>
+        <button data-mode="auto">Auto</button>
+      </div>
+      <p class="dial-note" id="dialNote">Assist — I run read-only tools freely and pause at every write or judgment call.</p>
+    </div>
+
+    <div>
+      <h3>What I know about you</h3>
+
+      <details class="mem-group" open>
+        <summary><span class="tw">▶</span>Observations<span class="count" id="cObs">3</span></summary>
+        <div id="gObs">
+          <div class="mem-item">Stripe payouts arrive T+2 days since March.<span class="prov prov-t">noticed across 6 runs</span><button class="revoke" aria-label="Revoke observation">×</button></div>
+          <div class="mem-item">Wholesale invoices settle day 38–44 (net-45).<span class="prov prov-t">from your note, May 12</span><button class="revoke" aria-label="Revoke observation">×</button></div>
+          <div class="mem-item">Refund spikes follow your quarterly sale weeks.<span class="prov prov-t">noticed across 3 runs</span><button class="revoke" aria-label="Revoke observation">×</button></div>
+        </div>
+      </details>
+
+      <details class="mem-group">
+        <summary><span class="tw">▶</span>Rules<span class="count" id="cRules">7</span></summary>
+        <div id="gRules">
+          <div class="mem-item">Stripe fee 2.9% + 30¢ is expected, cap $40.<span class="prov prov-t">accepted Apr 3</span><button class="revoke" aria-label="Revoke rule">×</button></div>
+          <div class="mem-item">Acme PO invoices may lag one day.<span class="prov prov-t">“Acme always invoices full PO” — you, May 12</span><button class="revoke" aria-label="Revoke rule">×</button></div>
+          <div class="mem-item">Gift-card orders settle $0 in Stripe.<span class="prov prov-t">accepted Jun 2</span><button class="revoke" aria-label="Revoke rule">×</button></div>
+        </div>
+      </details>
+
+      <details class="mem-group">
+        <summary><span class="tw">▶</span>Playbooks<span class="count" id="cPb">1</span></summary>
+        <div id="gPb">
+          <div class="mem-item">Inventory check — Shopify vs 3PL stock.<span class="prov prov-t">distilled from 2 runs · assist</span><button class="revoke" aria-label="Revoke playbook">×</button></div>
+        </div>
+      </details>
+
+      <details class="mem-group">
+        <summary><span class="tw">▶</span>Preferences<span class="count" id="cPref">2</span></summary>
+        <div id="gPref">
+          <div class="mem-item">Month matched by order date, not payout date.<span class="prov prov-t">chosen 3 closes in a row</span><button class="revoke" aria-label="Revoke preference">×</button></div>
+          <div class="mem-item">Excel export attached after every close.<span class="prov prov-t">you exported after all 6 runs</span><button class="revoke" aria-label="Revoke preference">×</button></div>
+        </div>
+      </details>
+
+      <details class="mem-group">
+        <summary><span class="tw">▶</span>Your ontology<span class="count" id="cOnt">5</span></summary>
+        <div id="gOnt">
+          <div class="mem-item"><code>region.code</code> ← “geo_zone”.<span class="prov prov-t">confirmed May 12</span><button class="revoke" aria-label="Revoke concept">×</button></div>
+          <div class="mem-item"><code>order.wholesale_flag</code> ← “b2b_tag”.<span class="prov prov-t">confirmed May 30</span><button class="revoke" aria-label="Revoke concept">×</button></div>
+        </div>
+      </details>
+    </div>
+
+    <p class="rail-fine">Everything here is yours — revoke anything and I’ll ask again next time. Export it all, any time.</p>
+  </aside>
+</div>
+
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+/* ════════════════════ state ════════════════════ */
+const S = {
+  mode: 'assist',
+  busy: false,
+  score: 78,
+  counts: { obs:3, rules:7, pb:1, pref:2, ont:5 },
+};
+const RM = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const wait = ms => new Promise(r => setTimeout(r, RM ? 0 : ms));
+
+/* ════════════════════ dom helpers ════════════════════ */
+const streamEl = document.getElementById('stream');
+const inner = document.getElementById('streamInner');
+function el(html){ const t=document.createElement('template'); t.innerHTML=html.trim(); return t.content.firstElementChild; }
+function add(node){ inner.appendChild(node); streamEl.scrollTop = streamEl.scrollHeight; return node; }
+function toast(msg){
+  const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show');
+  clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove('show'), 2600);
+}
+function esc(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;'); }
+async function thinking(ms){
+  const n = add(el('<div class="thinking" aria-hidden="true"><i></i><i></i><i></i></div>'));
+  await wait(ms); n.remove();
+}
+
+/* ════════════════════ block renderers ════════════════════ */
+function userMsg(text){ add(el(`<div class="msg-user">${esc(text)}</div>`)); }
+function fileMsg(name, size){ add(el(`<div class="msg-file">⬒ ${esc(name)} · ${size}</div>`)); }
+
+async function agentSay(html){
+  await thinking(650);
+  add(el(`<p class="agent-line">${html}</p>`));
+}
+
+/* plan block — visible, and gated in observe mode */
+async function planBlock(goal, steps, budget){
+  await thinking(700);
+  const b = add(el(`
+    <section class="block">
+      <div class="block-head"><span class="eyebrow">Plan</span><span class="title">${esc(goal)}</span></div>
+      <div class="block-body">
+        ${steps.map((s,i)=>`<div class="plan-step" data-i="${i}"><span class="n">${i+1}</span><span>${esc(s)}</span></div>`).join('')}
+        <div class="plan-meta"><span>budget ${budget}</span><span>mode: ${S.mode}</span><span>interrupt any time</span></div>
+        <div class="plan-approve"></div>
+      </div>
+    </section>`));
+  if (S.mode === 'observe'){
+    await new Promise(res=>{
+      const btn = el('<button class="btn primary">Approve &amp; run</button>');
+      b.querySelector('.plan-approve').appendChild(btn);
+      btn.addEventListener('click', ()=>{ btn.remove(); res(); }, {once:true});
+    });
+  }
+  return b;
+}
+function tickStep(planEl, i){
+  const s = planEl.querySelector(`.plan-step[data-i="${i}"]`);
+  if (s){ s.classList.add('done'); s.querySelector('.n').textContent = '✓'; }
+}
+
+/* tool register — streams line by line */
+async function registerBlock(lines){
+  const b = add(el(`
+    <section class="block">
+      <div class="block-head"><span class="eyebrow">Tools</span><span class="title">every call on the record</span></div>
+      <div class="block-body register"></div>
+    </section>`));
+  const body = b.querySelector('.register');
+  for (const l of lines){
+    const row = el(`<div class="reg-line"><span class="tool">${esc(l.tool)}</span><span class="lead"></span><span class="out">${esc(l.out)}</span><span class="t">${esc(l.t)}</span></div>`);
+    body.appendChild(row);
+    requestAnimationFrame(()=>row.classList.add('in'));
+    if (l.note) body.appendChild(el(`<div class="reg-note">↳ ${esc(l.note)}</div>`));
+    streamEl.scrollTop = streamEl.scrollHeight;
+    await wait(l.ms ?? 420);
+  }
+  return b;
+}
+
+/* question — suspends the run; in auto mode, answered from preference memory */
+async function questionBlock(q){
+  await thinking(500);
+  if (S.mode === 'auto' && q.autoAnswer){
+    add(el(`
+      <section class="block q"><div class="block-head"><span class="eyebrow">Resolved from memory</span></div>
+      <div class="block-body"><p style="margin:0;font-size:13.5px">${q.text}</p>
+      <p class="q-resolved">→ ${esc(q.autoAnswer)} <em>(your standing preference — change it in the memory panel)</em></p></div></section>`));
+    return q.choices[0];
+  }
+  return new Promise(res=>{
+    const b = add(el(`
+      <section class="block q">
+        <div class="block-head"><span class="eyebrow">Question — run paused</span></div>
+        <div class="block-body">
+          <p style="margin:0;font-size:13.5px">${q.text}</p>
+          <div class="choices">
+            ${q.choices.map((c,i)=>`<button class="choice" data-i="${i}">${esc(c)}</button>`).join('')}
+            ${q.explain?'<button class="choice ghost" data-x>Explain the difference</button>':''}
+          </div>
+        </div>
+      </section>`));
+    b.addEventListener('click', e=>{
+      const x = e.target.closest('[data-x]');
+      if (x){ x.replaceWith(el(`<p class="q-explain">${q.explain}</p>`)); return; }
+      const c = e.target.closest('.choice[data-i]');
+      if (!c) return;
+      b.querySelector('.choices').replaceWith(el(`<p class="q-resolved">→ ${esc(c.textContent)} · remembered for next time</p>`));
+      res(q.choices[+c.dataset.i]);
+    });
+  });
+}
+
+/* recon summary */
+async function summaryBlock(){
+  await thinking(600);
+  add(el(`
+    <section class="block">
+      <div class="block-head"><span class="eyebrow">June close</span><span class="title">orders ↔ payments</span></div>
+      <div class="block-body">
+        <p class="hero-line">June is 98.9% settled.</p>
+        <p class="hero-sub">Two items need your eyes — everything else is on the audit trail below.</p>
+        <div class="tiles">
+          <div class="tile"><div class="v">1,284</div><div class="k">orders</div></div>
+          <div class="tile"><div class="v">$412,908</div><div class="k">settled</div></div>
+          <div class="tile"><div class="v">$8,598</div><div class="k">open</div></div>
+        </div>
+        <div class="verdicts">
+          <span class="vd"><span class="si good">✓</span><span>Matched <b>1,271</b></span></span>
+          <span class="vd"><span class="sw" style="background:var(--chart)"></span><span>Expected by rules <b>9</b></span></span>
+          <span class="vd"><span class="si warn">▲</span><span>Needs review <b>2</b></span></span>
+          <span class="vd"><span class="si serious">●</span><span>New this month <b>2</b></span></span>
+        </div>
+      </div>
+    </section>`));
+  add(el(`
+    <details class="block audit">
+      <summary><span>9 rows handled silently by 3 rules</span><span class="lead"></span><span class="act">audit<span class="cl"> — close</span></span></summary>
+      <div class="audit-body">
+        <div class="rule"><span>Stripe fee 2.9% + 30¢ expected</span><span class="lead"></span><span>6 rows</span></div>
+        <div class="rule"><span>Gift-card orders settle $0</span><span class="lead"></span><span>2 rows</span></div>
+        <div class="rule"><span>Acme PO may lag one day</span><span class="lead"></span><span>1 row</span></div>
+        <p class="prov">Rule provenance: “Acme always invoices for the full PO even when partial-shipped” — you, May 12. Revoking a rule re-opens its rows.</p>
+      </div>
+    </details>`));
+}
+
+/* triage card */
+function triageCard(o){
+  const b = add(el(`
+    <section class="block triage ${o.serious?'serious':''}">
+      <div class="block-body">
+        <div class="tri-top"><b>${esc(o.title)}</b><span class="badge">${esc(o.badge)}</span><span class="tri-amt">${esc(o.amt)}</span></div>
+        <p class="tri-why">${o.why}</p>
+        <div class="tri-acts">
+          <button class="btn" data-a="expected">Expected — tell me why</button>
+          <button class="btn" data-a="defer">Investigate later</button>
+          <button class="btn" data-a="rule">Draft a rule…</button>
+        </div>
+      </div>
+    </section>`));
+  b.addEventListener('click', e=>{
+    const a = e.target.closest('[data-a]'); if (!a) return;
+    const body = b.querySelector('.block-body');
+    if (a.dataset.a === 'expected'){
+      b.querySelector('.tri-acts').replaceWith(el(`
+        <div class="reason-row"><input type="text" placeholder="One line — why is this expected?" aria-label="Why is this expected">
+        <button class="btn primary">Save</button></div>`));
+      const row = body.querySelector('.reason-row');
+      row.querySelector('.btn').addEventListener('click', ()=>{
+        const v = row.querySelector('input').value.trim() || 'expected — no reason given';
+        row.replaceWith(el(`<p class="resolved-note">✓ Resolved as expected — “${esc(v)}” saved to the decision log. If this signature recurs twice more, I’ll propose a rule from your words.</p>`));
+        toast('Decision logged — I’ll remember your reason');
+      }, {once:true});
+    } else if (a.dataset.a === 'defer'){
+      b.querySelector('.tri-acts').replaceWith(el(`<p class="resolved-note" style="color:var(--muted)">Deferred — this stays in your attention tray and carries into next month’s close.</p>`));
+    } else {
+      b.querySelector('.tri-acts').replaceWith(el(`<p class="resolved-note" style="color:var(--muted)">Rule drafted from this signature → pending your review, with a blast-radius preview of the rows it would cover.</p>`));
+      bump('rules','cRules'); toast('Rule drafted — pending your review');
+    }
+  });
+}
+
+/* proposal card (playbook / rule update) */
+function proposalCard(o){
+  const b = add(el(`
+    <section class="block proposal">
+      <div class="block-head"><span class="eyebrow prop-kind">${esc(o.kind)}</span></div>
+      <div class="block-body">
+        <p class="prop-name">${esc(o.name)}</p>
+        <p class="prov">${esc(o.prov)}</p>
+        ${o.steps?`<ul class="prop-steps">${o.steps.map(s=>`<li>· ${s}</li>`).join('')}</ul>`:''}
+        <div class="prop-acts">
+          <button class="btn primary">${esc(o.acceptLabel||'Accept')}</button>
+          <button class="btn">Not now</button>
+          <span class="hint">${esc(o.hint||'')}</span>
+        </div>
+      </div>
+    </section>`));
+  b.querySelector('.prop-acts').addEventListener('click', e=>{
+    const btn = e.target.closest('.btn'); if (!btn) return;
+    const yes = btn.classList.contains('primary');
+    b.querySelector('.prop-acts').replaceWith(el(`<p class="resolved-note" ${yes?'':'style="color:var(--muted)"'}>${yes?('✓ '+esc(o.acceptedNote)):'Dismissed — I won’t ask again this month.'}</p>`));
+    if (yes && o.onAccept) o.onAccept();
+  }, {once:true});
+}
+
+/* concept proposal (ontology induction) */
+function conceptCard(o, onConfirm){
+  const b = add(el(`
+    <section class="block proposal">
+      <div class="block-head"><span class="eyebrow prop-kind">Concept proposal</span><span class="title">from column “${esc(o.col)}”</span></div>
+      <div class="block-body">
+        <p class="prop-name" style="font-family:var(--mono);font-size:14px">${esc(o.id)}</p>
+        <dl class="concept-grid">
+          <div><dt>is-a</dt><dd>${esc(o.isa)}</dd></div>
+          <div><dt>samples</dt><dd>${esc(o.samples)}</dd></div>
+          <div><dt>aliases</dt><dd>${esc(o.aliases)}</dd></div>
+          <div><dt>invariant</dt><dd>${esc(o.inv)}</dd></div>
+        </dl>
+        <div class="prop-acts">
+          <button class="btn primary">Confirm</button>
+          <button class="btn">Edit…</button>
+          <button class="btn">Skip</button>
+        </div>
+      </div>
+    </section>`));
+  b.querySelector('.prop-acts').addEventListener('click', e=>{
+    const btn = e.target.closest('.btn'); if (!btn) return;
+    if (btn.classList.contains('primary')){
+      b.querySelector('.prop-acts').replaceWith(el('<p class="resolved-note">✓ Saved to your ontology overlay — provenance: this file, your confirmation.</p>'));
+      onConfirm();
+    } else {
+      b.querySelector('.prop-acts').replaceWith(el('<p class="resolved-note" style="color:var(--muted)">Skipped — the column stays unbound; I’ll ask again on the next file.</p>'));
+    }
+  }, {once:true});
+}
+
+/* ════════════════════ memory-panel updates ════════════════════ */
+function bump(key, id){
+  S.counts[key]++;
+  document.getElementById(id).textContent = S.counts[key];
+}
+function addMemItem(groupId, countKey, countId, html, prov){
+  bump(countKey, countId);
+  const g = document.getElementById(groupId);
+  const item = el(`<div class="mem-item">${html}<span class="prov prov-t">${esc(prov)}</span><button class="revoke" aria-label="Revoke">×</button></div>`);
+  g.prepend(item);
+  g.closest('details').open = true;
+}
+function setScore(v){
+  S.score = v;
+  document.getElementById('scoreVal').textContent = v;
+  drawSpark();
+}
+
+/* revoke anywhere in the memory rail */
+document.getElementById('rightRail').addEventListener('click', e=>{
+  const r = e.target.closest('.revoke'); if (!r) return;
+  const item = r.closest('.mem-item');
+  const group = item.closest('details');
+  const countEl = group.querySelector('.count');
+  countEl.textContent = Math.max(0, +countEl.textContent - 1);
+  item.remove();
+  toast('Revoked — I’ll ask next time instead of assuming');
+});
+
+/* ════════════════════ sparkline ════════════════════ */
+const sparkData = [52,58,57,63,66,71,74];
+function drawSpark(){
+  const svg = document.getElementById('spark');
+  const data = [...sparkData, S.score];
+  const W=260,H=38,P=4, lo=45, hi=Math.max(...data)+4;
+  const x=i=>P+i*(W-2*P)/(data.length-1);
+  const y=v=>H-P-(v-lo)/(hi-lo)*(H-2*P);
+  const pts = data.map((v,i)=>`${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
+  const last = data.length-1;
+  svg.innerHTML =
+    `<polygon points="${x(0)},${H-1} ${pts} ${x(last)},${H-1}" fill="var(--chart)" opacity=".12"/>`+
+    `<polyline points="${pts}" fill="none" stroke="var(--chart)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`+
+    `<circle cx="${x(last)}" cy="${y(data[last])}" r="3" fill="var(--chart)"/>`;
+}
+drawSpark();
+
+/* ════════════════════ scenarios ════════════════════ */
+async function scMonthClose(){
+  const plan = await planBlock('Confirm every June order got paid', [
+    'Pull June orders from Shopify (synced 2h ago)',
+    'Pull June payouts + charges from Stripe',
+    'Bind columns against your ontology — 5 of the concepts are yours',
+    'Match, then classify with your 7 rules',
+    'Compare against May — surface only what changed',
+  ], '≤ $0.40 · ≤ 30 tool calls · ~20s');
+
+  await registerBlock([
+    {tool:'shopify.pull_orders', out:'jun 1–30 · 1,284 rows', t:'0.9s'},
+    {tool:'stripe.pull_charges', out:'jun · 1,301 rows', t:'1.1s'},
+    {tool:'bind_columns', out:'24/24 bound', t:'0.2s',
+     note:'“geo_zone” → region.code — your alias, learned May 12'},
+    {tool:'match_by_key', out:'1,269 exact · 6 fuzzy', t:'2.3s'},
+    {tool:'apply_rules', out:'7 active · 9 rows expected', t:'0.1s'},
+    {tool:'classify', out:'deterministic · 6 ambiguous', t:'0.4s'},
+  ]);
+  [0,1,2,3].forEach(i=>tickStep(plan,i));
+
+  await questionBlock({
+    text:'6 rows straddle the month boundary. Close June by <b>order date</b> or <b>payout date</b>? You’ve chosen order date the last three closes.',
+    choices:['Order date — as usual','Payout date'],
+    autoAnswer:'Order date',
+    explain:'Order date counts a sale in the month you sold it; payout date counts it when the cash landed (Stripe pays T+2, so late-June sales land in July). Your accountant closes on order date.',
+  });
+
+  await registerBlock([
+    {tool:'reclassify', out:'basis: order date · 4 of 6 resolved', t:'0.2s'},
+    {tool:'compare_runs', out:'vs May · 2 new signatures', t:'0.3s'},
+  ]);
+  tickStep(plan,4);
+
+  await summaryBlock();
+
+  await agentSay('Two things need your eyes. Both are below — with my reasoning attached, and your words wherever a rule came from you.');
+
+  triageCard({
+    title:'Wholesale invoice W-1042 unpaid', amt:'$8,412.00', badge:'seen 3 runs',
+    why:'Acme’s net-45 terms put settlement at day 38–44 — today is day 41, so this is <em>probably</em> fine, but it crosses your $5,000 materiality line, so I won’t auto-clear it.',
+  });
+  triageCard({
+    title:'Order #58231 refunded twice', amt:'−$186.20', badge:'new', serious:true,
+    why:'Stripe shows two refunds four minutes apart; Shopify shows one. This looks like a double-click in the dashboard — worth a support ticket before it ages.',
+  });
+
+  await wait(600);
+  proposalCard({
+    kind:'Playbook proposal', name:'Month-end close',
+    prov:'Distilled from your last 3 closes — same goal, same steps, your preferences baked in.',
+    steps:[
+      'shopify.pull_orders <span class="c">⟨month⟩</span> · stripe.pull_charges <span class="c">⟨month⟩</span>',
+      'bind → match → classify with <span class="c">account rules</span>',
+      'compare vs previous close · surface <span class="c">new signatures</span> only',
+      'attach Excel export <span class="c">(your preference)</span>',
+    ],
+    acceptLabel:'Save playbook', hint:'Runs in assist until 2 clean months, then earns auto.',
+    acceptedNote:'Saved. I’ll run it on the 1st and only bring you what changed. It earns auto after 2 clean months — and loses it if you start overriding me.',
+    onAccept(){
+      addMemItem('gPb','pb','cPb','Month-end close — orders vs payments.','distilled from 3 runs · assist');
+      setScore(81);
+      toast('Playbook saved — autonomy will be earned, not assumed');
+    },
+  });
+}
+
+async function scPayoutShort(){
+  await agentSay('Quick question — no full plan needed. Three tool calls.');
+  await registerBlock([
+    {tool:'stripe.pull_payout', out:'po_9H2K · $18,206.44', t:'0.8s'},
+    {tool:'decompose_payout', out:'fees · refunds · reserve', t:'0.3s'},
+    {tool:'match_refunds', out:'→ 2 orders', t:'0.4s'},
+  ]);
+  await thinking(600);
+  add(el(`
+    <section class="block">
+      <div class="block-head"><span class="eyebrow">Answer</span><span class="title">payout po_9H2K, week of Jul 21</span></div>
+      <div class="block-body">
+        <p style="margin:0;font-size:14px">The $312 isn’t missing — it decomposes exactly:</p>
+        <div class="ledger">
+          <div class="row"><span>Refunds — orders #58231, #58307</span><span class="lead"></span><span class="amt">−$218.00</span></div>
+          <div class="row"><span>Fee change since Jul 1 (plan upgrade)</span><span class="lead"></span><span class="amt">−$61.30</span></div>
+          <div class="row"><span>Rolling reserve (releases Aug 4)</span><span class="lead"></span><span class="amt">−$32.70</span></div>
+          <div class="row total"><span>Short vs. expected</span><span class="lead"></span><span class="amt">−$312.00</span></div>
+        </div>
+      </div>
+    </section>`));
+  await agentSay('One thing worth fixing: your fee rule still expects <b>2.9% + 30¢</b>, but since the July plan change Stripe is charging <b>2.7% + 25¢</b> — that mismatch is why this payout even flagged.');
+  proposalCard({
+    kind:'Rule update', name:'Stripe fee shape → 2.7% + 25¢',
+    prov:'Evidence: 214 charges since Jul 1 fit the new shape within a cent.',
+    acceptLabel:'Update rule',
+    acceptedNote:'Updated — provenance: this conversation. 6 open fee flags just cleared themselves.',
+    onAccept(){
+      addMemItem('gRules','rules','cRules','Stripe fee 2.7% + 25¢ expected (plan change Jul 1).','from this conversation, Jul 30');
+      S.counts.rules--; document.getElementById('cRules').textContent = S.counts.rules; // replaces old fee rule
+      toast('Fee rule updated from conversation');
+    },
+  });
+}
+
+async function scNewFile(){
+  fileMsg('threepl_claims_export.csv','2.1 MB · 4,102 rows');
+  await registerBlock([
+    {tool:'profile_schema', out:'12 columns · fingerprinted', t:'0.3s'},
+    {tool:'bind_columns', out:'core + pack · 9/12 bound', t:'0.2s'},
+  ]);
+  await agentSay('This looks like <b>carrier claims</b> — a shape I haven’t seen from you. Nine columns bound against the core and pack ontology. Three are new to me; here’s what I think they are:');
+  let confirmed = 0;
+  const done = async ()=>{
+    confirmed++;
+    addMemItem('gOnt','ont','cOnt', '<code>claim.*</code> concept confirmed.', 'from threepl_claims_export.csv, Jul 30');
+    if (confirmed === 3){
+      await agentSay('All three saved to your overlay — the next claims file binds on its own. After two more confirmations these become <b>candidates for a Logistics pack</b>: your ontology, reusable on any workspace you choose, never shared without you.');
+      setScore(Math.min(S.score+1, 99));
+    }
+  };
+  conceptCard({col:'DED_CD', id:'claim.deduction_code', isa:'core:identifier', samples:'SHORT-01 · DMG-02', aliases:'ded_cd, deduction', inv:'join-safe, non-null'}, done);
+  conceptCard({col:'AMT_FILED', id:'claim.filed_amount', isa:'core:money.amount', samples:'$418.20 · $92.00', aliases:'amt_filed, claim_amt', inv:'has currency (USD)'}, done);
+  conceptCard({col:'SCAC', id:'claim.carrier_code', isa:'core:party.code', samples:'FDEG · UPSN', aliases:'scac, carrier', inv:'4-letter code'}, done);
+}
+
+async function scWhatLearned(){
+  await agentSay('Here’s everything I currently believe about Meridian Goods — each item shows where it came from, and you can revoke any of it.');
+  add(el(`
+    <section class="block">
+      <div class="block-head"><span class="eyebrow">Memory</span><span class="title">yours — exportable, revocable</span></div>
+      <div class="block-body mem-cols">
+        <div><h4>Observations · ${S.counts.obs}</h4><ul>
+          <li>Stripe payouts arrive T+2 since March</li>
+          <li>Wholesale invoices settle day 38–44</li>
+          <li>Refund spikes follow sale weeks</li></ul></div>
+        <div><h4>Rules · ${S.counts.rules}</h4><ul>
+          <li>Stripe fee shape expected, cap $40</li>
+          <li>Acme PO may lag one day <em>(“Acme always invoices full PO” — you)</em></li>
+          <li>Gift-card orders settle $0</li></ul></div>
+        <div><h4>Playbooks · ${S.counts.pb}</h4><ul>
+          <li>Inventory check (assist)</li>${S.counts.pb>1?'<li>Month-end close (assist → auto)</li>':''}</ul></div>
+        <div><h4>Preferences · ${S.counts.pref}</h4><ul>
+          <li>Close months by order date</li>
+          <li>Attach Excel after every close</li></ul></div>
+        <div><h4>Your ontology · ${S.counts.ont}</h4><ul>
+          <li><code>region.code</code>, <code>order.wholesale_flag</code>…</li>
+          <li>${S.counts.ont>5?'<code>claim.*</code> — 3 new, pack candidates':'41 pack concepts + your overlay'}</li></ul></div>
+      </div>
+    </section>`));
+  await agentSay('The score in the corner — <b>trust-adjusted autonomy</b> — is how much of the work I do that you <em>don’t</em> later correct. It’s the number I have to earn.');
+}
+
+async function scFallback(text){
+  await agentSay(`In the real product I’d plan against your data for that. This prototype plays four scripted scenes — try one below, or read the <span class="cite" title="docs/plans/2026-07-30-agentic-platform.md">architecture plan</span> for how “${esc(text).slice(0,60)}” would actually run.`);
+}
+
+/* ════════════════════ chips + composer ════════════════════ */
+const SCENARIOS = [
+  {label:'Close out June — did every order get paid?', run:scMonthClose, once:true},
+  {label:'Why is this week’s payout $312 short?', run:scPayoutShort, once:true},
+  {label:'Drop an unfamiliar file', run:scNewFile, once:true, silent:true},
+  {label:'What have you learned about us?', run:scWhatLearned},
+];
+const chipsEl = document.getElementById('chips');
+function renderChips(){
+  chipsEl.innerHTML='';
+  SCENARIOS.filter(s=>!s.done).forEach(s=>{
+    const c = el(`<button class="chip">${esc(s.label)}</button>`);
+    c.addEventListener('click', ()=>launch(s));
+    chipsEl.appendChild(c);
+  });
+}
+async function launch(s, typed){
+  if (S.busy) return;
+  S.busy = true;
+  if (!s.silent) userMsg(typed || s.label);
+  if (s.once) { s.done = true; renderChips(); }
+  try { await s.run(typed); } finally { S.busy = false; }
+}
+document.getElementById('composeForm').addEventListener('submit', e=>{
+  e.preventDefault();
+  const input = document.getElementById('composeInput');
+  const text = input.value.trim(); if (!text || S.busy) return;
+  input.value='';
+  const t = text.toLowerCase();
+  const match =
+    (/(close|reconcil|paid|month)/.test(t) && !SCENARIOS[0].done) ? SCENARIOS[0] :
+    (/(payout|short|stripe|fee)/.test(t) && !SCENARIOS[1].done) ? SCENARIOS[1] :
+    /(learn|know|memory|remember)/.test(t) ? SCENARIOS[3] : null;
+  if (match) launch(match, text);
+  else { userMsg(text); S.busy=true; scFallback(text).finally(()=>S.busy=false); }
+});
+
+/* ════════════════════ autonomy dial ════════════════════ */
+const DIAL_NOTES = {
+  observe:'Observe — I propose every step and wait for your approval. Day-one default.',
+  assist:'Assist — I run read-only tools freely and pause at every write or judgment call.',
+  auto:'Auto — I run end-to-end within budget; questions I’ve seen before resolve from your preferences. Earned per playbook, revoked by your overrides.',
+};
+document.querySelectorAll('.dial button').forEach(b=>{
+  b.addEventListener('click', ()=>{
+    document.querySelectorAll('.dial button').forEach(x=>x.classList.toggle('on', x===b));
+    S.mode = b.dataset.mode;
+    document.getElementById('dialNote').textContent = DIAL_NOTES[S.mode];
+    toast(`Autonomy: ${S.mode}`);
+  });
+});
+
+/* ════════════════════ theme + drawers ════════════════════ */
+document.getElementById('themeBtn').addEventListener('click', ()=>{
+  const root = document.documentElement;
+  const dark = root.dataset.theme ? root.dataset.theme === 'dark'
+    : matchMedia('(prefers-color-scheme: dark)').matches;
+  root.dataset.theme = dark ? 'light' : 'dark';
+});
+const memBtn = document.getElementById('memoryBtn'), rail = document.getElementById('rightRail');
+memBtn.addEventListener('click', ()=>{
+  const open = rail.classList.toggle('open');
+  memBtn.setAttribute('aria-expanded', open);
+});
+document.addEventListener('click', e=>{
+  if (rail.classList.contains('open') && !rail.contains(e.target) && e.target!==memBtn){
+    rail.classList.remove('open'); memBtn.setAttribute('aria-expanded','false');
+  }
+});
+
+/* ════════════════════ opening beat ════════════════════ */
+(async ()=>{
+  await wait(400);
+  await agentSay('Good morning. Since Friday: Shopify synced <b>41 new orders</b>, Stripe landed <b>2 payouts</b>, and the wholesale invoice from the June close is on <b>day 41 of net-45</b> — I’ll flag it Thursday if it hasn’t settled. One payout looks short; that’s worth a minute.');
+  await agentSay('Ask me anything, drop a file, or pick up where we left off ↓');
+  renderChips();
+})();
+</script>
+</body>
+</html>

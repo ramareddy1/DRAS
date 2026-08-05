@@ -19,6 +19,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 
 from .agent import run_job
+from .agent_runtime.job_persist import persist_agent_output
 from .llm import is_configured
 from .memory import accounts as accounts_memory
 from .memory import (
@@ -46,6 +47,7 @@ load_dotenv()
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
 JOB_TIMEOUT_SECONDS = int(os.getenv("RECONOPS_JOB_TIMEOUT_SECONDS", "900"))
 
+from .agent_runtime.routes import router as agent_router
 from .auth import members as members_store
 from .auth.routes import require_user, router as auth_router
 from .integrations.routes import router as connections_router
@@ -78,6 +80,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="ReconOps AI", version="0.1.0", lifespan=lifespan)
 app.include_router(auth_router)
 app.include_router(connections_router)
+app.include_router(agent_router)
 
 setup_logging()
 setup_sentry()
@@ -394,28 +397,7 @@ def _run_job_background(job_id: str, account: Account, df_a, df_b, cfg: Reconcil
         storage.update_job(job_id, status="error", error=str(outcome["error"]))
         return
 
-    result = outcome["result"]
-    fields = _clean({
-        "status": "complete",
-        "summary": result.summary.model_dump(),
-        "matched": result.matched,
-        "unmatched_a": result.unmatched_a,
-        "unmatched_b": result.unmatched_b,
-        "discrepancies": result.discrepancies,
-        "timing": result.timing,
-        "insights": result.insights,
-        "insights_status": result.insights_status,
-        "llm_calls": result.llm_calls,
-        "metrics": result.metrics.model_dump(mode="json") if result.metrics else None,
-        "triage_emitted_count": len(result.triage_emitted),
-        "rule_applications": result.rule_applications,
-        "expected_unmatched_a": result.expected_unmatched_a,
-        "expected_unmatched_b": result.expected_unmatched_b,
-        "binding_warning": result.binding_warning,
-        "key_col_a": result.key_col_a,
-        "key_col_b": result.key_col_b,
-    })
-    storage.update_job(job_id, **fields)
+    persist_agent_output(job_id=job_id, account_id=account.id, output=outcome["result"])
 
 
 def _backfill_rationale(rows):

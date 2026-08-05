@@ -16,7 +16,7 @@ from fastapi import HTTPException
 
 from .config import data_dir
 
-DEFAULT_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-opus-4-7")
+DEFAULT_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-opus-4-8")
 USAGE_LOG_PATH = data_dir() / "llm_usage.jsonl"
 
 

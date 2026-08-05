@@ -9,3 +9,7 @@ data/
 samples/Kaggle/
 samples/olist/
 .DS_Store
+
+# Per-machine Docker overrides — host port remaps, local KMS keys. The
+# committed docker-compose.yml is the shared truth; this never is.
+docker-compose.override.yml
