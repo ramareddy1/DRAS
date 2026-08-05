@@ -174,6 +174,25 @@ def _would_exceed(budget: Budget, spend: Spend) -> Optional[str]:
     return exceeded(budget, probe)
 
 
+def _question_text(turn: Turn, gated: ToolCall) -> str:
+    """The human-readable question a suspend records.
+
+    Approval is whole-turn and all-or-nothing (design decision 1), so a turn
+    carrying more than one call has to say so: naming only the call that
+    tripped the gate would understate what approving actually runs. A
+    single-call turn keeps the original wording verbatim — that is the
+    overwhelmingly common case and there is nothing extra to disclose.
+    """
+    if len(turn.tool_calls) == 1:
+        return f"Run {gated.name}?"
+    names = ", ".join(c.name for c in turn.tool_calls)
+    return (
+        f"Run all {len(turn.tool_calls)} tool calls in this turn "
+        f"({names})? {gated.name} is what requires approval, and "
+        f"approving runs the whole turn."
+    )
+
+
 def _execute_calls(
     *, run: Run, account_id: str, calls: List[ToolCall],
     budget: Budget, spend: Spend,
@@ -324,11 +343,21 @@ def _drive(
         # coherently.
         for call in turn.tool_calls:
             if registry.requires_gate(call.name, run.autonomy):
+                # `question_asked` is the only durable record of what the
+                # human was asked, and approve executes the *whole* turn
+                # (decision 1). `tool`/`input` name the call that tripped
+                # the gate — existing consumers read those — and `calls`
+                # lists everything approving will run, including calls that
+                # did not need a gate of their own.
                 q = store.append_event(
                     run=run, type=RunEventType.question_asked,
                     payload={
-                        "text": f"Run {call.name}?",
+                        "text": _question_text(turn, call),
                         "tool": call.name, "input": call.input,
+                        "calls": [
+                            {"tool": c.name, "input": c.input}
+                            for c in turn.tool_calls
+                        ],
                     },
                 )
                 store.save_transcript(
@@ -410,6 +439,20 @@ def execute_run(
     if run.status not in (RunStatus.pending, RunStatus.running):
         raise ValueError(
             f"run {run.id} is not startable: status is {run.status.value}"
+        )
+
+    # `running` alone cannot tell "crashed mid-run" from "claimed for
+    # resume": `store.claim_suspended` flips `suspended -> running` too. The
+    # transcript is what distinguishes them. A run whose transcript ends in
+    # unanswered `tool_use` blocks is mid-gate — restarting it here would
+    # rebuild `messages` from the goal and overwrite that transcript,
+    # destroying the only thing a resume can continue from and duplicating
+    # the event log. Refuse, the same way a non-startable status is refused,
+    # so a reaper for stale `running` rows cannot silently do it.
+    if _awaits_resume(run.transcript):
+        raise ValueError(
+            f"run {run.id} is not startable: its transcript ends with "
+            f"unanswered tool calls — it needs resume, not restart"
         )
 
     driver = driver or AnthropicDriver()
@@ -495,6 +538,22 @@ def _pending_calls(messages: List[Dict[str, Any]]) -> List[ToolCall]:
     if not calls:
         raise ValueError("cannot resume: no pending tool call to answer")
     return calls
+
+
+def _awaits_resume(messages: List[Dict[str, Any]]) -> bool:
+    """Is this transcript one only a resume can continue?
+
+    Deliberately phrased as "does `_pending_calls` accept it" rather than as
+    a second shape check. There is exactly one definition of "ends in an
+    unanswered `tool_use` turn"; a paraphrase here could drift from the one
+    `resume_run` actually relies on, and the two disagreeing is precisely
+    the failure this guard exists to prevent.
+    """
+    try:
+        _pending_calls(messages)
+    except ValueError:
+        return False
+    return True
 
 
 def resume_run(

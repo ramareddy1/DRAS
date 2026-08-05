@@ -166,6 +166,118 @@ def test_approve_executes_the_pending_tool_and_continues(account_id):
 
 
 @mock_aws
+def test_a_single_call_turn_keeps_the_original_question_payload(account_id):
+    """The pre-`calls` keys stay byte-for-byte what they were.
+
+    `calls` is additive: anything already reading `text` / `tool` / `input`
+    has to keep working, and for the single-call turn — every suspend the
+    suite had before this — the payload is unchanged apart from the new key.
+    """
+    boto3.client("s3", region_name="us-east-1").create_bucket(Bucket=BUCKET)
+    run_id, ds = _suspend_on_profile(account_id)
+
+    events = store.events_since(run_id=run_id, account_id=account_id)
+    asked = [e for e in events if e.type is RunEventType.question_asked]
+    assert len(asked) == 1
+    payload = asked[0].payload
+    assert payload["text"] == "Run profile_schema?"
+    assert payload["tool"] == "profile_schema"
+    assert payload["input"] == {"dataset_id": ds}
+    assert payload["calls"] == [
+        {"tool": "profile_schema", "input": {"dataset_id": ds}},
+    ]
+
+
+@mock_aws
+def test_a_two_gated_call_turn_names_both_and_approve_runs_both(account_id):
+    """`question_asked` must not understate what one approve authorizes.
+
+    The gate loop returns on the *first* gated call, so `tool`/`input` name
+    only that one — but approve is whole-turn (decision 1) and hands every
+    pending `tool_use` block to `_execute_calls`. `calls` is the durable
+    record that closes the gap: without it a run approved here carries an
+    audit trail naming one tool for a decision that ran two.
+
+    `observe` gates every call including reads, so both calls in this turn
+    are genuinely gated, and both are registered so both really execute on
+    approve.
+    """
+    boto3.client("s3", region_name="us-east-1").create_bucket(Bucket=BUCKET)
+
+    run = store.create_run(
+        account_id=account_id, goal={"intent": "look"},
+        autonomy=AutonomyLevel.observe, budget={"tool_call_cap": 10},
+    )
+    token = context.set_run_context(
+        context.RunContext(run_id=run.id, account_id=account_id),
+    )
+    try:
+        ds = artifacts.put_dataset(
+            run_id=run.id, account_id=account_id,
+            df=pd.DataFrame({
+                "order_id": ["A-1", "A-2", "A-3"],
+                "gross_total": [1.0, 2.0, 3.0],
+            }),
+            label="orders",
+        )
+    finally:
+        context.reset_run_context(token)
+
+    suspended = runtime.execute_run(
+        run_id=run.id, account_id=account_id,
+        driver=ScriptedDriver([
+            Turn(text=None, tool_calls=[
+                ToolCall(id="t1", name="profile_schema",
+                         input={"dataset_id": ds}),
+                ToolCall(id="t2", name="bind_columns",
+                         input={"dataset_id": ds}),
+            ]),
+        ]),
+    )
+    assert suspended.status is RunStatus.suspended
+
+    events = store.events_since(run_id=run.id, account_id=account_id)
+    asked = [e for e in events if e.type is RunEventType.question_asked]
+    assert len(asked) == 1
+    payload = asked[0].payload
+
+    # Old keys unchanged: still the call that tripped the gate.
+    assert payload["tool"] == "profile_schema"
+    assert payload["input"] == {"dataset_id": ds}
+    # New key: every call one approve will run.
+    assert payload["calls"] == [
+        {"tool": "profile_schema", "input": {"dataset_id": ds}},
+        {"tool": "bind_columns", "input": {"dataset_id": ds}},
+    ]
+    # And the prose says so too, rather than naming one of the two.
+    assert payload["text"] == (
+        "Run all 2 tool calls in this turn (profile_schema, bind_columns)? "
+        "profile_schema is what requires approval, and approving runs the "
+        "whole turn."
+    )
+
+    store.claim_suspended(run.id, account_id)
+    driver = ScriptedDriver([Turn(text="done", tool_calls=[])])
+    finished = runtime.resume_run(
+        run_id=run.id, account_id=account_id, decision="approve",
+        driver=driver,
+    )
+
+    # Whole-turn approval: both calls ran, exactly once each.
+    assert finished.status is RunStatus.done
+    events = store.events_since(run_id=run.id, account_id=account_id)
+    returned = [e for e in events if e.type is RunEventType.tool_returned]
+    assert [e.payload["tool"] for e in returned] == [
+        "profile_schema", "bind_columns",
+    ]
+    assert finished.spend["tool_calls"] == 2
+    content = _assert_single_user_turn_answers_every_pending_call(
+        driver.last_messages,
+    )
+    assert not any(b.get("is_error") for b in content)
+
+
+@mock_aws
 def test_reject_feeds_an_error_result_back_and_the_model_replans(account_id):
     boto3.client("s3", region_name="us-east-1").create_bucket(Bucket=BUCKET)
     run_id, _ = _suspend_on_profile(account_id)
@@ -314,13 +426,29 @@ def test_resume_refuses_a_finished_run(account_id):
         )
 
 
+@mock_aws
 def test_resume_refuses_an_invalid_decision(account_id):
-    run = store.create_run(
-        account_id=account_id, goal={}, autonomy=AutonomyLevel.auto, budget={},
-    )
-    with pytest.raises(ValueError):
+    """Pin the decision guard, not the status check standing in for it.
+
+    A `pending` run would raise `ValueError` from the status check for *any*
+    decision, valid or not — so it cannot tell whether the decision guard
+    exists. The fixture is therefore a genuinely suspended run, claimed so
+    its status is `running` and the status check passes; the only thing left
+    to reject "maybe" is the guard itself. `match=` pins the guard's own
+    message so the status check's wording cannot satisfy it.
+    """
+    boto3.client("s3", region_name="us-east-1").create_bucket(Bucket=BUCKET)
+    run_id, _ = _suspend_on_profile(account_id)
+
+    claimed = store.claim_suspended(run_id, account_id)
+    assert claimed is not None
+    assert claimed.status is RunStatus.running
+
+    with pytest.raises(
+        ValueError, match=r"decision must be 'approve' or 'reject'",
+    ):
         runtime.resume_run(
-            run_id=run.id, account_id=account_id, decision="maybe",
+            run_id=run_id, account_id=account_id, decision="maybe",
             driver=ScriptedDriver([]),
         )
 

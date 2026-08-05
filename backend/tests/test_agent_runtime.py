@@ -216,6 +216,13 @@ def test_a_gated_call_blocks_every_call_in_the_same_turn(account_id):
     assert RunEventType.tool_returned not in types
     question = next(e for e in events if e.type == RunEventType.question_asked)
     assert question.payload["tool"] == "post_to_slack"
+    # `tool` names the call that tripped the gate — which is not the first
+    # call in the turn. `calls` is what records the rest, including the read
+    # that needed no gate of its own but would still run on approve.
+    assert question.payload["calls"] == [
+        {"tool": "profile_schema", "input": {"dataset_id": ds}},
+        {"tool": "post_to_slack", "input": {"text": "hi"}},
+    ]
     assert result.suspended_on == question.id
     # The saved transcript ends on the assistant turn; both tool_use blocks
     # are unanswered together, which is what makes the run resumable.
@@ -435,6 +442,58 @@ def test_execute_run_refuses_a_suspended_run(account_id):
         )
     assert "suspended" in str(err.value)
     assert store.load_run(run.id, account_id).status is RunStatus.suspended
+
+
+def test_execute_run_refuses_a_run_that_is_waiting_on_a_resume(account_id):
+    """A restart would destroy the transcript a resume needs.
+
+    `store.claim_suspended` flips `suspended -> running`, which is exactly
+    what a crashed worker also leaves behind — and `execute_run` accepts
+    `running` for that reason. Status alone cannot tell the two apart, so a
+    reaper that re-invokes `execute_run` on stale `running` rows would
+    rebuild `messages` from the goal, overwrite the saved transcript, and
+    duplicate the event log for any run whose resume task was lost to a
+    restart. The transcript shape is what distinguishes them.
+    """
+    run = _make_run(account_id)
+    suspended = runtime.execute_run(
+        run_id=run.id, account_id=account_id,
+        driver=FakeDriver([Turn(text=None, tool_calls=[
+            ToolCall(id="t1", name="post_to_slack", input={"text": "hi"}),
+        ])]),
+    )
+    assert suspended.status is RunStatus.suspended
+
+    claimed = store.claim_suspended(run.id, account_id)
+    assert claimed is not None
+    assert claimed.status is RunStatus.running
+
+    with pytest.raises(ValueError) as err:
+        runtime.execute_run(
+            run_id=run.id, account_id=account_id,
+            driver=FakeDriver([Turn(text="restarted", tool_calls=[])]),
+        )
+    assert run.id in str(err.value)
+    assert "resume" in str(err.value)
+
+    # Nothing was destroyed: the transcript still ends on the unanswered
+    # tool_use turn, the log was not replayed, and the run stays claimable
+    # by the resume path rather than being marked failed.
+    reloaded = store.load_run(run.id, account_id)
+    assert reloaded.status is RunStatus.running
+    assert reloaded.transcript[-1]["role"] == "assistant"
+    assert [b["id"] for b in reloaded.transcript[-1]["content"]] == ["t1"]
+    events = store.events_since(run_id=run.id, account_id=account_id)
+    assert len([
+        e for e in events if e.type == RunEventType.goal_received
+    ]) == 1
+
+    # ...and the resume it actually needs still works.
+    finished = runtime.resume_run(
+        run_id=run.id, account_id=account_id, decision="reject",
+        driver=FakeDriver([Turn(text="understood", tool_calls=[])]),
+    )
+    assert finished.status is RunStatus.done
 
 
 def test_system_prompt_puts_core_instructions_first(account_id):
